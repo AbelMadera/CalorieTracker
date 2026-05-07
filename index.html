@@ -148,6 +148,14 @@
           <path d="M5 12h14"/>
         </svg>
       ),
+      trash: (s = 20, c = 'currentColor') => (
+        <svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M4 7h16"/>
+          <path d="M10 11v6M14 11v6"/>
+          <path d="M6 7l1 14h10l1-14"/>
+          <path d="M9 7V4h6v3"/>
+        </svg>
+      ),
     };
 
     // ═══════════════════════════════════════════════════════════════
@@ -501,17 +509,30 @@
     // ═══════════════════════════════════════════════════════════════
     // Add Food
     // ═══════════════════════════════════════════════════════════════
-    function AddFood({ meal, favorites, onClose, onPickFood, onScan, onQuickAdd }) {
+    function AddFood({ meal, foods, customFoods, favorites, onClose, onPickFood, onScan, onCreateFood }) {
       const [q, setQ] = useState('');
       const [tab, setTab] = useState('recents');
+      const [creating, setCreating] = useState(false);
 
       const results = q.trim()
-        ? FOOD_DB.filter(f => (f.name + ' ' + f.brand).toLowerCase().includes(q.toLowerCase()))
+        ? foods.filter(f => (f.name + ' ' + (f.brand || '')).toLowerCase().includes(q.toLowerCase()))
         : tab === 'recents'
-          ? RECENT_IDS.map(id => FOOD_DB.find(f => f.id === id)).filter(Boolean)
+          ? RECENT_IDS.map(id => foods.find(f => f.id === id)).filter(Boolean)
           : tab === 'favorites'
-            ? Array.from(favorites).map(id => FOOD_DB.find(f => f.id === id)).filter(Boolean)
-            : FOOD_DB.slice(0, 8);
+            ? Array.from(favorites).map(id => foods.find(f => f.id === id)).filter(Boolean)
+            : tab === 'my foods'
+              ? customFoods
+              : foods.slice(0, 8);
+
+      if (creating) {
+        return (
+          <CustomFoodForm
+            meal={meal}
+            onBack={() => setCreating(false)}
+            onCreate={onCreateFood}
+          />
+        );
+      }
 
       return (
         <div style={{ height: '100%', display: 'flex', flexDirection: 'column', background: T.bg }}>
@@ -554,7 +575,7 @@
 
             <div style={{ display: 'flex', gap: 8 }}>
               <ActionChip icon={Ic.scan(18, '#fff')} label="Scan barcode" onClick={onScan} dark />
-              <ActionChip icon={Ic.plus(18, T.ink)} label="Quick add" onClick={onQuickAdd} />
+              <ActionChip icon={Ic.plus(18, T.ink)} label="Add item" onClick={() => setCreating(true)} />
             </div>
           </div>
 
@@ -582,7 +603,7 @@
             }}>
               {results.length === 0 && (
                 <div style={{ padding: 28, textAlign: 'center', color: T.mute, fontSize: 13 }}>
-                  No matches. Try the barcode scanner.
+                  No matches. Add your own item or try the barcode scanner.
                 </div>
               )}
               {results.map((f, i) => (
@@ -629,10 +650,240 @@
       );
     }
 
+    function CustomFoodForm({ meal: initialMeal, onBack, onCreate }) {
+      const [name, setName] = useState('Eggs');
+      const [brand, setBrand] = useState('Custom');
+      const [serving, setServing] = useState('1 serving');
+      const [cal, setCal] = useState(100);
+      const [p, setP] = useState(20);
+      const [c, setC] = useState(10);
+      const [f, setF] = useState(5);
+      const [qty, setQty] = useState(1);
+      const [meal, setMeal] = useState(initialMeal || 'Breakfast');
+      const [fav, setFav] = useState(false);
+
+      const toNum = (v) => v === '' ? 0 : Number(v) || 0;
+      const totalCal = Math.round(toNum(cal) * qty);
+      const totalP = +(toNum(p) * qty).toFixed(1);
+      const totalC = +(toNum(c) * qty).toFixed(1);
+      const totalF = +(toNum(f) * qty).toFixed(1);
+      const canSave = name.trim() && [cal, p, c, f].every(v => v !== '' && Number(v) >= 0);
+
+      const numberInput = (value, setter, style = {}) => (
+        <input
+          value={value}
+          type="number"
+          inputMode="decimal"
+          min="0"
+          step="1"
+          onChange={e => setter(e.target.value === '' ? '' : Math.max(0, Number(e.target.value)))}
+          style={{
+            border: 'none', outline: 'none', background: 'transparent',
+            color: T.ink, fontFamily: 'inherit', fontVariantNumeric: 'tabular-nums',
+            ...style,
+          }}
+        />
+      );
+
+      const save = () => {
+        if (!canSave) return;
+        onCreate({
+          food: {
+            name: name.trim(),
+            brand: brand.trim() || 'Custom',
+            serving: serving.trim() || '1 serving',
+            cal: toNum(cal),
+            p: toNum(p),
+            c: toNum(c),
+            f: toNum(f),
+            custom: true,
+          },
+          qty,
+          meal,
+          favorite: fav,
+        });
+      };
+
+      return (
+        <div style={{ height: '100%', background: T.bg, display: 'flex', flexDirection: 'column' }}>
+          <div style={{
+            padding: '54px 16px 14px', display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+          }}>
+            <button onClick={onBack} style={{
+              width: 36, height: 36, borderRadius: 18, background: T.card, border: `1px solid ${T.hair}`,
+              display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: T.ink,
+            }}>{Ic.back(20)}</button>
+            <button onClick={() => setFav(v => !v)} style={{
+              width: 36, height: 36, borderRadius: 18, background: T.card, border: `1px solid ${T.hair}`,
+              display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer',
+            }}>{Ic.star(18, fav ? T.warn : T.ink2, fav ? T.warn : 'none')}</button>
+          </div>
+
+          <div style={{ flex: 1, overflowY: 'auto', padding: '0 20px 24px' }}>
+            <div style={{ marginBottom: 20 }}>
+              <input
+                value={brand}
+                onChange={e => setBrand(e.target.value)}
+                placeholder="Custom"
+                style={{
+                  width: '100%', border: 'none', outline: 'none', background: 'transparent',
+                  fontSize: 11, color: T.mute, fontWeight: 600, letterSpacing: 0.6,
+                  marginBottom: 4, textTransform: 'uppercase', fontFamily: 'inherit',
+                }}
+              />
+              <input
+                value={name}
+                onChange={e => setName(e.target.value)}
+                placeholder="Item name"
+                autoFocus
+                style={{
+                  width: '100%', border: 'none', outline: 'none', background: 'transparent',
+                  fontSize: 26, fontWeight: 700, color: T.ink, letterSpacing: -0.6,
+                  lineHeight: 1.15, fontFamily: 'inherit',
+                }}
+              />
+              <input
+                value={serving}
+                onChange={e => setServing(e.target.value)}
+                placeholder="1 serving"
+                style={{
+                  width: '100%', border: 'none', outline: 'none', background: 'transparent',
+                  fontSize: 13, color: T.mute, marginTop: 6, fontFamily: 'inherit',
+                }}
+              />
+            </div>
+
+            <div style={{
+              background: T.card, borderRadius: 20, padding: '20px 18px', border: `1px solid ${T.hair}`,
+              marginBottom: 14,
+            }}>
+              <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', marginBottom: 18 }}>
+                <div>
+                  <div style={{ fontSize: 11, color: T.mute, fontWeight: 600, letterSpacing: 0.6 }}>CALORIES</div>
+                  {numberInput(cal, setCal, {
+                    width: 132, fontSize: 44, fontWeight: 700, letterSpacing: -1.5,
+                    lineHeight: 1,
+                  })}
+                </div>
+                <div style={{ fontSize: 13, color: T.mute, marginBottom: 4 }}>
+                  {Math.round((toNum(cal) / GOAL.cal) * 100)}% of goal
+                </div>
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                {[
+                  { l: 'Protein', value: p, set: setP, g: GOAL.p, color: T.protein },
+                  { l: 'Carbs', value: c, set: setC, g: GOAL.c, color: T.carbs },
+                  { l: 'Fat', value: f, set: setF, g: GOAL.f, color: T.fat },
+                ].map(m => (
+                  <div key={m.l} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                    <div style={{ width: 56, fontSize: 12, color: T.ink2, fontWeight: 500 }}>{m.l}</div>
+                    <div style={{ flex: 1, height: 6, background: T.hair, borderRadius: 3, overflow: 'hidden' }}>
+                      <div style={{ width: `${Math.min(100, (toNum(m.value) / m.g) * 100)}%`, height: '100%', background: m.color, transition: 'width 300ms' }} />
+                    </div>
+                    <div style={{ width: 50, display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 2 }}>
+                      {numberInput(m.value, m.set, {
+                        width: 34, textAlign: 'right', fontSize: 13, fontWeight: 600,
+                      })}
+                      <span style={{ fontSize: 13, fontWeight: 600, color: T.ink }}>g</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div style={{
+              background: T.card, borderRadius: 20, padding: '16px 18px', border: `1px solid ${T.hair}`, marginBottom: 14,
+            }}>
+              <div style={{ fontSize: 11, color: T.mute, fontWeight: 600, letterSpacing: 0.6, marginBottom: 10 }}>SERVINGS</div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+                <button onClick={() => setQty(Math.max(0.25, +(qty - 0.25).toFixed(2)))} style={{
+                  width: 44, height: 44, borderRadius: 22, background: T.bg, border: `1px solid ${T.hair2}`,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: T.ink,
+                }}>{Ic.minus(20)}</button>
+                <div style={{ flex: 1, textAlign: 'center' }}>
+                  <div style={{ fontSize: 30, fontWeight: 700, color: T.ink, letterSpacing: -0.8, fontVariantNumeric: 'tabular-nums', lineHeight: 1 }}>
+                    {qty}
+                  </div>
+                  <div style={{ fontSize: 11, color: T.mute, marginTop: 2 }}>{serving || '1 serving'}</div>
+                </div>
+                <button onClick={() => setQty(+(qty + 0.25).toFixed(2))} style={{
+                  width: 44, height: 44, borderRadius: 22, background: T.ink, border: 'none',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: '#fff',
+                }}>{Ic.plus(20)}</button>
+              </div>
+              <div style={{ display: 'flex', gap: 6, marginTop: 12 }}>
+                {[0.5, 1, 1.5, 2].map(q => (
+                  <button key={q} onClick={() => setQty(q)} style={{
+                    flex: 1, padding: '7px 0', borderRadius: 9,
+                    background: qty === q ? T.ink : T.bg,
+                    color: qty === q ? '#fff' : T.ink2,
+                    border: `1px solid ${qty === q ? T.ink : T.hair2}`,
+                    fontSize: 12, fontWeight: 600, cursor: 'pointer', fontVariantNumeric: 'tabular-nums',
+                  }}>{q}x</button>
+                ))}
+              </div>
+            </div>
+
+            <div style={{
+              background: T.card, borderRadius: 20, padding: '16px 18px', border: `1px solid ${T.hair}`, marginBottom: 14,
+            }}>
+              <div style={{ fontSize: 11, color: T.mute, fontWeight: 600, letterSpacing: 0.6, marginBottom: 10 }}>MEAL</div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
+                {['Breakfast', 'Lunch', 'Dinner', 'Snacks'].map(m => (
+                  <button key={m} onClick={() => setMeal(m)} style={{
+                    padding: '10px', borderRadius: 10,
+                    background: meal === m ? T.ink : T.bg,
+                    color: meal === m ? '#fff' : T.ink2,
+                    border: `1px solid ${meal === m ? T.ink : T.hair2}`,
+                    fontSize: 13, fontWeight: 600, cursor: 'pointer',
+                  }}>{m}</button>
+                ))}
+              </div>
+            </div>
+
+            <div style={{
+              background: T.card, borderRadius: 20, padding: '16px 18px', border: `1px solid ${T.hair}`,
+            }}>
+              <div style={{ fontSize: 11, color: T.mute, fontWeight: 600, letterSpacing: 0.6, marginBottom: 10 }}>NUTRITION</div>
+              {[
+                ['Calories', totalCal, 'kcal'],
+                ['Protein', totalP, 'g'],
+                ['Carbohydrates', totalC, 'g'],
+                ['Fat', totalF, 'g'],
+              ].map(([l, v, u], i) => (
+                <div key={i} style={{
+                  display: 'flex', justifyContent: 'space-between', padding: '8px 0',
+                  borderTop: i > 0 ? `1px solid ${T.hair}` : 'none',
+                }}>
+                  <span style={{ fontSize: 13, color: T.ink2 }}>{l}</span>
+                  <span style={{ fontSize: 13, fontWeight: 600, color: T.ink, fontVariantNumeric: 'tabular-nums' }}>{v} {u}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div style={{
+            padding: '12px 20px 32px', borderTop: `1px solid ${T.hair}`, background: T.card,
+          }}>
+            <button disabled={!canSave} onClick={save} style={{
+              width: '100%', padding: '15px', borderRadius: 16,
+              background: canSave ? T.ink : T.hair2, border: 'none',
+              color: canSave ? '#fff' : T.mute, fontWeight: 600, fontSize: 15,
+              cursor: canSave ? 'pointer' : 'default',
+              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+            }}>
+              {Ic.plus(18, canSave ? '#fff' : T.mute)}
+              <span>Add {totalCal} kcal to {meal}</span>
+            </button>
+          </div>
+        </div>
+      );
+    }
+
     // ═══════════════════════════════════════════════════════════════
     // Scanner
     // ═══════════════════════════════════════════════════════════════
-    function Scanner({ onClose, onMatch }) {
+    function Scanner({ foods, onClose, onMatch }) {
       const [scanning, setScanning] = useState(true);
       const [matched, setMatched] = useState(null);
       const [flash, setFlash] = useState(false);
@@ -640,7 +891,7 @@
 
       useEffect(() => {
         if (!scanning) return;
-        const barcoded = FOOD_DB.filter(f => f.barcode);
+        const barcoded = foods.filter(f => f.barcode);
         const t = setTimeout(() => {
           const hit = barcoded[matchIndex % barcoded.length];
           setMatched(hit);
@@ -809,10 +1060,11 @@
     // ═══════════════════════════════════════════════════════════════
     // Food Detail
     // ═══════════════════════════════════════════════════════════════
-    function FoodDetail({ food, defaultMeal, defaultQty = 1, favorites, onClose, onLog, onToggleFav }) {
+    function FoodDetail({ food, defaultMeal, defaultQty = 1, favorites, onClose, onLog, onRemove, onToggleFav }) {
       const [qty, setQty] = useState(defaultQty);
       const [meal, setMeal] = useState(defaultMeal || 'Breakfast');
       const fav = favorites.has(food.id);
+      const isLoggedItem = Boolean(onRemove);
 
       const cal = Math.round(food.cal * qty);
       const p = +(food.p * qty).toFixed(1);
@@ -957,14 +1209,27 @@
           <div style={{
             padding: '12px 20px 32px', borderTop: `1px solid ${T.hair}`, background: T.card,
           }}>
-            <button onClick={() => onLog({ ...food, qty, meal })} style={{
-              width: '100%', padding: '15px', borderRadius: 16, background: T.ink, border: 'none',
-              color: '#fff', fontWeight: 600, fontSize: 15, cursor: 'pointer',
-              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
-            }}>
-              {Ic.plus(18, '#fff')}
-              <span>Add {cal} kcal to {meal}</span>
-            </button>
+            <div style={{ display: 'flex', gap: 10 }}>
+              {isLoggedItem && (
+                <button onClick={onRemove} style={{
+                  flex: '0 0 112px', padding: '15px 12px', borderRadius: 16,
+                  background: T.bg, border: `1px solid ${T.hair2}`,
+                  color: '#A6423F', fontWeight: 600, fontSize: 14, cursor: 'pointer',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7,
+                }}>
+                  {Ic.trash(17, '#A6423F')}
+                  <span>Remove</span>
+                </button>
+              )}
+              <button onClick={() => onLog({ ...food, qty, meal })} style={{
+                flex: 1, padding: '15px', borderRadius: 16, background: T.ink, border: 'none',
+                color: '#fff', fontWeight: 600, fontSize: 15, cursor: 'pointer',
+                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+              }}>
+                {isLoggedItem ? Ic.check(18, '#fff') : Ic.plus(18, '#fff')}
+                <span>{isLoggedItem ? `Update ${cal} kcal` : `Add ${cal} kcal to ${meal}`}</span>
+              </button>
+            </div>
           </div>
         </div>
       );
@@ -1449,17 +1714,21 @@
       const [scanning, setScanning] = useState(false);
       const [foodDetail, setFoodDetail] = useState(null);
       const [entries, setEntries] = useState(saved?.entries || DEFAULT_ENTRIES);
+      const [customFoods, setCustomFoods] = useState(saved?.customFoods || []);
       const [water, setWater] = useState(saved?.water ?? 5);
       const [favorites, setFavorites] = useState(new Set(saved?.favorites || DEFAULT_FAVORITE_IDS));
       const [toast, setToast] = useState(null);
       const uidRef = useRef(saved?.uidCounter || 100);
+      const customFoodRef = useRef(saved?.customFoodCounter || ((saved?.customFoods?.length || 0) + 1));
+      const foods = useMemo(() => [...FOOD_DB, ...customFoods], [customFoods]);
 
       // Persist
       useEffect(() => {
         saveState({
-          entries, water, favorites: Array.from(favorites), uidCounter: uidRef.current,
+          entries, customFoods, water, favorites: Array.from(favorites),
+          uidCounter: uidRef.current, customFoodCounter: customFoodRef.current,
         });
-      }, [entries, water, favorites]);
+      }, [entries, customFoods, water, favorites]);
 
       const showToast = (msg) => {
         setToast(msg);
@@ -1473,14 +1742,20 @@
         setAddingMeal(null);
       };
 
-      const handleQuickAdd = () => {
-        const generic = { id: 'quick-' + Date.now(), name: 'Quick add', brand: 'Custom', serving: '1 entry', cal: 100, p: 0, c: 0, f: 0 };
-        setFoodDetail({ food: generic, meal: addingMeal, qty: 1 });
+      const handleCreateCustomFood = ({ food, qty, meal, favorite }) => {
+        const nextFood = { ...food, id: 'custom-' + customFoodRef.current };
+        customFoodRef.current += 1;
+        uidRef.current += 1;
+        setCustomFoods(prev => [nextFood, ...prev]);
+        if (favorite) setFavorites(prev => new Set([...prev, nextFood.id]));
+        setEntries(prev => [...prev, { ...nextFood, qty, meal, uid: 'u' + uidRef.current }]);
         setAddingMeal(null);
+        showToast(`Added ${nextFood.name}`);
       };
 
       const handleLog = (entry) => {
-        uidRef.current += 1;
+        const isUpdate = entry.uid && entries.some(e => e.uid === entry.uid);
+        if (!isUpdate) uidRef.current += 1;
         setEntries(prev => {
           // If editing an existing entry (same uid), replace it
           if (entry.uid && prev.some(e => e.uid === entry.uid)) {
@@ -1490,7 +1765,13 @@
         });
         setFoodDetail(null);
         setScanning(false);
-        showToast(`Added to ${entry.meal}`);
+        showToast(isUpdate ? 'Item updated' : `Added to ${entry.meal}`);
+      };
+
+      const handleRemoveEntry = (uid) => {
+        setEntries(prev => prev.filter(e => e.uid !== uid));
+        setFoodDetail(null);
+        showToast('Item removed');
       };
 
       const handleToggleFav = (id) => {
@@ -1504,9 +1785,11 @@
       const handleResetData = () => {
         if (confirm('Reset all data to defaults? This cannot be undone.')) {
           setEntries(DEFAULT_ENTRIES);
+          setCustomFoods([]);
           setWater(5);
           setFavorites(new Set(DEFAULT_FAVORITE_IDS));
           uidRef.current = 100;
+          customFoodRef.current = 1;
           showToast('Data reset');
         }
       };
@@ -1540,11 +1823,13 @@
                 <div style={{ position: 'absolute', inset: 0, background: T.bg, zIndex: 100 }}>
                   <AddFood
                     meal={addingMeal}
+                    foods={foods}
+                    customFoods={customFoods}
                     favorites={favorites}
                     onClose={() => setAddingMeal(null)}
                     onPickFood={handlePickFood}
                     onScan={() => { setAddingMeal(null); setScanning(true); }}
-                    onQuickAdd={handleQuickAdd}
+                    onCreateFood={handleCreateCustomFood}
                   />
                 </div>
               )}
@@ -1552,6 +1837,7 @@
               {scanning && (
                 <div style={{ position: 'absolute', inset: 0, zIndex: 110 }}>
                   <Scanner
+                    foods={foods}
                     onClose={() => setScanning(false)}
                     onMatch={(f) => { setScanning(false); setFoodDetail({ food: f, meal: 'Snacks', qty: 1 }); }}
                   />
@@ -1567,6 +1853,7 @@
                     favorites={favorites}
                     onClose={() => setFoodDetail(null)}
                     onLog={(entry) => handleLog({ ...entry, uid: foodDetail.uid })}
+                    onRemove={foodDetail.uid ? () => handleRemoveEntry(foodDetail.uid) : null}
                     onToggleFav={handleToggleFav}
                   />
                 </div>
