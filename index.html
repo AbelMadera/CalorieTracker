@@ -650,14 +650,52 @@
       );
     }
 
+    // Labeled text/number input with a visible border and background — used in CustomFoodForm.
+    function Field({ label, value, onChange, placeholder, suffix, type = 'text', autoFocus = false, flex }) {
+      return (
+        <label style={{
+          display: 'flex', flexDirection: 'column', gap: 6, flex: flex, minWidth: 0,
+        }}>
+          <span style={{
+            fontSize: 11, color: T.mute, fontWeight: 600, letterSpacing: 0.6, textTransform: 'uppercase',
+          }}>{label}</span>
+          <div style={{
+            display: 'flex', alignItems: 'center', gap: 6,
+            background: T.bg, border: `1px solid ${T.hair2}`, borderRadius: 10,
+            padding: '10px 12px',
+          }}>
+            <input
+              value={value}
+              onChange={onChange}
+              placeholder={placeholder}
+              type={type}
+              inputMode={type === 'number' ? 'decimal' : undefined}
+              min={type === 'number' ? '0' : undefined}
+              step={type === 'number' ? 'any' : undefined}
+              autoFocus={autoFocus}
+              style={{
+                flex: 1, minWidth: 0, width: '100%',
+                border: 'none', outline: 'none', background: 'transparent',
+                fontFamily: 'inherit', fontSize: 15, fontWeight: 500, color: T.ink,
+                fontVariantNumeric: type === 'number' ? 'tabular-nums' : 'normal',
+              }}
+            />
+            {suffix && (
+              <span style={{ fontSize: 13, color: T.mute, fontWeight: 500, flexShrink: 0 }}>{suffix}</span>
+            )}
+          </div>
+        </label>
+      );
+    }
+
     function CustomFoodForm({ meal: initialMeal, onBack, onCreate }) {
-      const [name, setName] = useState('Eggs');
-      const [brand, setBrand] = useState('Custom');
-      const [serving, setServing] = useState('1 serving');
-      const [cal, setCal] = useState(100);
-      const [p, setP] = useState(20);
-      const [c, setC] = useState(10);
-      const [f, setF] = useState(5);
+      const [name, setName] = useState('');
+      const [brand, setBrand] = useState('');
+      const [serving, setServing] = useState('');
+      const [cal, setCal] = useState('');
+      const [p, setP] = useState('');
+      const [c, setC] = useState('');
+      const [f, setF] = useState('');
       const [qty, setQty] = useState(1);
       const [meal, setMeal] = useState(initialMeal || 'Breakfast');
       const [fav, setFav] = useState(false);
@@ -669,21 +707,11 @@
       const totalF = +(toNum(f) * qty).toFixed(1);
       const canSave = name.trim() && [cal, p, c, f].every(v => v !== '' && Number(v) >= 0);
 
-      const numberInput = (value, setter, style = {}) => (
-        <input
-          value={value}
-          type="number"
-          inputMode="decimal"
-          min="0"
-          step="1"
-          onChange={e => setter(e.target.value === '' ? '' : Math.max(0, Number(e.target.value)))}
-          style={{
-            border: 'none', outline: 'none', background: 'transparent',
-            color: T.ink, fontFamily: 'inherit', fontVariantNumeric: 'tabular-nums',
-            ...style,
-          }}
-        />
-      );
+      const numberChange = (setter) => (e) => {
+        const v = e.target.value;
+        if (v === '') setter('');
+        else setter(String(Math.max(0, Number(v))));
+      };
 
       const save = () => {
         if (!canSave) return;
@@ -713,88 +741,117 @@
               width: 36, height: 36, borderRadius: 18, background: T.card, border: `1px solid ${T.hair}`,
               display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: T.ink,
             }}>{Ic.back(20)}</button>
-            <button onClick={() => setFav(v => !v)} style={{
+            <div style={{ textAlign: 'center' }}>
+              <div style={{ fontSize: 10, color: T.mute, fontWeight: 600, letterSpacing: 0.6 }}>NEW FOOD</div>
+              <div style={{ fontSize: 16, fontWeight: 700, color: T.ink, letterSpacing: -0.2 }}>Create</div>
+            </div>
+            <button onClick={() => setFav(v => !v)} aria-label="Save as favorite" style={{
               width: 36, height: 36, borderRadius: 18, background: T.card, border: `1px solid ${T.hair}`,
               display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer',
             }}>{Ic.star(18, fav ? T.warn : T.ink2, fav ? T.warn : 'none')}</button>
           </div>
 
           <div style={{ flex: 1, overflowY: 'auto', padding: '0 20px 24px' }}>
-            <div style={{ marginBottom: 20 }}>
-              <input
-                value={brand}
-                onChange={e => setBrand(e.target.value)}
-                placeholder="Custom"
-                style={{
-                  width: '100%', border: 'none', outline: 'none', background: 'transparent',
-                  fontSize: 11, color: T.mute, fontWeight: 600, letterSpacing: 0.6,
-                  marginBottom: 4, textTransform: 'uppercase', fontFamily: 'inherit',
-                }}
-              />
-              <input
+            {/* Basics */}
+            <div style={{
+              background: T.card, borderRadius: 20, padding: '18px', border: `1px solid ${T.hair}`,
+              marginBottom: 14, display: 'flex', flexDirection: 'column', gap: 14,
+            }}>
+              <div style={{ fontSize: 11, color: T.mute, fontWeight: 600, letterSpacing: 0.6 }}>BASICS</div>
+              <Field
+                label="Name"
                 value={name}
                 onChange={e => setName(e.target.value)}
-                placeholder="Item name"
+                placeholder="e.g. Scrambled eggs"
                 autoFocus
-                style={{
-                  width: '100%', border: 'none', outline: 'none', background: 'transparent',
-                  fontSize: 26, fontWeight: 700, color: T.ink, letterSpacing: -0.6,
-                  lineHeight: 1.15, fontFamily: 'inherit',
-                }}
               />
-              <input
+              <Field
+                label="Brand (optional)"
+                value={brand}
+                onChange={e => setBrand(e.target.value)}
+                placeholder="Leave blank for Custom"
+              />
+              <Field
+                label="Serving size"
                 value={serving}
                 onChange={e => setServing(e.target.value)}
-                placeholder="1 serving"
-                style={{
-                  width: '100%', border: 'none', outline: 'none', background: 'transparent',
-                  fontSize: 13, color: T.mute, marginTop: 6, fontFamily: 'inherit',
-                }}
+                placeholder="e.g. 2 eggs (100 g)"
               />
             </div>
 
+            {/* Nutrition (per serving) */}
             <div style={{
-              background: T.card, borderRadius: 20, padding: '20px 18px', border: `1px solid ${T.hair}`,
-              marginBottom: 14,
+              background: T.card, borderRadius: 20, padding: '18px', border: `1px solid ${T.hair}`,
+              marginBottom: 14, display: 'flex', flexDirection: 'column', gap: 14,
             }}>
-              <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', marginBottom: 18 }}>
-                <div>
-                  <div style={{ fontSize: 11, color: T.mute, fontWeight: 600, letterSpacing: 0.6 }}>CALORIES</div>
-                  {numberInput(cal, setCal, {
-                    width: 132, fontSize: 44, fontWeight: 700, letterSpacing: -1.5,
-                    lineHeight: 1,
-                  })}
-                </div>
-                <div style={{ fontSize: 13, color: T.mute, marginBottom: 4 }}>
-                  {Math.round((toNum(cal) / GOAL.cal) * 100)}% of goal
-                </div>
+              <div>
+                <div style={{ fontSize: 11, color: T.mute, fontWeight: 600, letterSpacing: 0.6 }}>NUTRITION</div>
+                <div style={{ fontSize: 11, color: T.mute, marginTop: 2 }}>Per serving size</div>
               </div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                {[
-                  { l: 'Protein', value: p, set: setP, g: GOAL.p, color: T.protein },
-                  { l: 'Carbs', value: c, set: setC, g: GOAL.c, color: T.carbs },
-                  { l: 'Fat', value: f, set: setF, g: GOAL.f, color: T.fat },
-                ].map(m => (
-                  <div key={m.l} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                    <div style={{ width: 56, fontSize: 12, color: T.ink2, fontWeight: 500 }}>{m.l}</div>
-                    <div style={{ flex: 1, height: 6, background: T.hair, borderRadius: 3, overflow: 'hidden' }}>
-                      <div style={{ width: `${Math.min(100, (toNum(m.value) / m.g) * 100)}%`, height: '100%', background: m.color, transition: 'width 300ms' }} />
-                    </div>
-                    <div style={{ width: 50, display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 2 }}>
-                      {numberInput(m.value, m.set, {
-                        width: 34, textAlign: 'right', fontSize: 13, fontWeight: 600,
-                      })}
-                      <span style={{ fontSize: 13, fontWeight: 600, color: T.ink }}>g</span>
-                    </div>
-                  </div>
-                ))}
+              <Field
+                label="Calories"
+                value={cal}
+                onChange={numberChange(setCal)}
+                placeholder="0"
+                suffix="kcal"
+                type="number"
+              />
+              <div style={{ display: 'flex', gap: 10 }}>
+                <Field
+                  label="Protein"
+                  value={p}
+                  onChange={numberChange(setP)}
+                  placeholder="0"
+                  suffix="g"
+                  type="number"
+                  flex={1}
+                />
+                <Field
+                  label="Carbs"
+                  value={c}
+                  onChange={numberChange(setC)}
+                  placeholder="0"
+                  suffix="g"
+                  type="number"
+                  flex={1}
+                />
+                <Field
+                  label="Fat"
+                  value={f}
+                  onChange={numberChange(setF)}
+                  placeholder="0"
+                  suffix="g"
+                  type="number"
+                  flex={1}
+                />
               </div>
+              {/* Live macro bars */}
+              {(toNum(cal) > 0 || toNum(p) > 0 || toNum(c) > 0 || toNum(f) > 0) && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8, paddingTop: 4 }}>
+                  {[
+                    { l: 'Protein', value: p, g: GOAL.p, color: T.protein },
+                    { l: 'Carbs', value: c, g: GOAL.c, color: T.carbs },
+                    { l: 'Fat', value: f, g: GOAL.f, color: T.fat },
+                  ].map(m => (
+                    <div key={m.l} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                      <div style={{ width: 56, fontSize: 11, color: T.mute, fontWeight: 500 }}>{m.l}</div>
+                      <div style={{ flex: 1, height: 5, background: T.hair, borderRadius: 3, overflow: 'hidden' }}>
+                        <div style={{ width: `${Math.min(100, (toNum(m.value) / m.g) * 100)}%`, height: '100%', background: m.color, transition: 'width 300ms' }} />
+                      </div>
+                      <div style={{ width: 50, textAlign: 'right', fontSize: 11, color: T.mute, fontVariantNumeric: 'tabular-nums' }}>
+                        {Math.round((toNum(m.value) / m.g) * 100)}%
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
 
+            {/* Servings */}
             <div style={{
               background: T.card, borderRadius: 20, padding: '16px 18px', border: `1px solid ${T.hair}`, marginBottom: 14,
             }}>
-              <div style={{ fontSize: 11, color: T.mute, fontWeight: 600, letterSpacing: 0.6, marginBottom: 10 }}>SERVINGS</div>
+              <div style={{ fontSize: 11, color: T.mute, fontWeight: 600, letterSpacing: 0.6, marginBottom: 10 }}>HOW MANY SERVINGS?</div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
                 <button onClick={() => setQty(Math.max(0.25, +(qty - 0.25).toFixed(2)))} style={{
                   width: 44, height: 44, borderRadius: 22, background: T.bg, border: `1px solid ${T.hair2}`,
@@ -804,7 +861,7 @@
                   <div style={{ fontSize: 30, fontWeight: 700, color: T.ink, letterSpacing: -0.8, fontVariantNumeric: 'tabular-nums', lineHeight: 1 }}>
                     {qty}
                   </div>
-                  <div style={{ fontSize: 11, color: T.mute, marginTop: 2 }}>{serving || '1 serving'}</div>
+                  <div style={{ fontSize: 11, color: T.mute, marginTop: 2 }}>{serving || 'serving'}</div>
                 </div>
                 <button onClick={() => setQty(+(qty + 0.25).toFixed(2))} style={{
                   width: 44, height: 44, borderRadius: 22, background: T.ink, border: 'none',
@@ -819,11 +876,12 @@
                     color: qty === q ? '#fff' : T.ink2,
                     border: `1px solid ${qty === q ? T.ink : T.hair2}`,
                     fontSize: 12, fontWeight: 600, cursor: 'pointer', fontVariantNumeric: 'tabular-nums',
-                  }}>{q}x</button>
+                  }}>{q}×</button>
                 ))}
               </div>
             </div>
 
+            {/* Meal */}
             <div style={{
               background: T.card, borderRadius: 20, padding: '16px 18px', border: `1px solid ${T.hair}`, marginBottom: 14,
             }}>
@@ -841,14 +899,15 @@
               </div>
             </div>
 
+            {/* Total preview */}
             <div style={{
               background: T.card, borderRadius: 20, padding: '16px 18px', border: `1px solid ${T.hair}`,
             }}>
-              <div style={{ fontSize: 11, color: T.mute, fontWeight: 600, letterSpacing: 0.6, marginBottom: 10 }}>NUTRITION</div>
+              <div style={{ fontSize: 11, color: T.mute, fontWeight: 600, letterSpacing: 0.6, marginBottom: 10 }}>TOTAL ({qty}× SERVING)</div>
               {[
                 ['Calories', totalCal, 'kcal'],
                 ['Protein', totalP, 'g'],
-                ['Carbohydrates', totalC, 'g'],
+                ['Carbs', totalC, 'g'],
                 ['Fat', totalF, 'g'],
               ].map(([l, v, u], i) => (
                 <div key={i} style={{
@@ -873,7 +932,7 @@
               display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
             }}>
               {Ic.plus(18, canSave ? '#fff' : T.mute)}
-              <span>Add {totalCal} kcal to {meal}</span>
+              <span>{canSave ? `Add ${totalCal} kcal to ${meal}` : 'Fill in name and nutrition'}</span>
             </button>
           </div>
         </div>
@@ -1238,7 +1297,7 @@
     // ═══════════════════════════════════════════════════════════════
     // Diary
     // ═══════════════════════════════════════════════════════════════
-    function Diary({ entriesByDate, waterByDate, selectedDate, setSelectedDate, onOpenFood }) {
+    function Diary({ entriesByDate, waterByDate, selectedDate, setSelectedDate, setWater, onOpenFood }) {
       const todayKey = dateKey();
       const selected = parseDateKey(selectedDate);
 
@@ -1283,7 +1342,15 @@
               <div style={{ fontSize: 11, color: T.mute, fontWeight: 600, letterSpacing: 0.6 }}>{rangeLabel}</div>
               <div style={{ fontSize: 26, fontWeight: 700, color: T.ink, letterSpacing: -0.6, marginTop: 2 }}>Diary</div>
             </div>
-            <div style={{ display: 'flex', gap: 6 }}>
+            <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+              {selectedDate !== todayKey && (
+                <button onClick={() => setSelectedDate(todayKey)} style={{
+                  height: 32, padding: '0 12px', borderRadius: 16,
+                  background: T.ink, border: 'none', color: '#fff',
+                  fontSize: 12, fontWeight: 600, cursor: 'pointer',
+                  fontFamily: 'inherit',
+                }}>Today</button>
+              )}
               <button onClick={goPrevWeek} aria-label="Previous week" style={{
                 width: 32, height: 32, borderRadius: 16, background: T.card,
                 border: `1px solid ${T.hair}`, display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -1344,28 +1411,55 @@
             background: T.card, borderRadius: 18, padding: '16px 18px',
             border: `1px solid ${T.hair}`, marginBottom: 16,
           }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 14 }}>
-              <div>
-                <div style={{ fontSize: 11, color: T.mute, fontWeight: 600, letterSpacing: 0.6 }}>CALORIES</div>
-                <div style={{ display: 'flex', alignItems: 'baseline', gap: 6, marginTop: 2 }}>
-                  <span style={{ fontSize: 28, fontWeight: 700, color: T.ink, letterSpacing: -0.8, fontVariantNumeric: 'tabular-nums' }}>
-                    {num(Math.round(totals.cal))}
-                  </span>
-                  <span style={{ fontSize: 13, color: T.mute }}>/ {num(GOAL.cal)}</span>
-                </div>
-              </div>
-              <div style={{ textAlign: 'right' }}>
-                <div style={{ fontSize: 11, color: T.mute, fontWeight: 600, letterSpacing: 0.6 }}>WATER</div>
-                <div style={{ display: 'flex', alignItems: 'baseline', gap: 4, marginTop: 2, justifyContent: 'flex-end' }}>
-                  <span style={{ fontSize: 18, fontWeight: 700, color: T.ink, fontVariantNumeric: 'tabular-nums' }}>{water}</span>
-                  <span style={{ fontSize: 11, color: T.mute }}>/ {GOAL.water}</span>
-                </div>
+            <div style={{ marginBottom: 14 }}>
+              <div style={{ fontSize: 11, color: T.mute, fontWeight: 600, letterSpacing: 0.6 }}>CALORIES</div>
+              <div style={{ display: 'flex', alignItems: 'baseline', gap: 6, marginTop: 2 }}>
+                <span style={{ fontSize: 28, fontWeight: 700, color: T.ink, letterSpacing: -0.8, fontVariantNumeric: 'tabular-nums' }}>
+                  {num(Math.round(totals.cal))}
+                </span>
+                <span style={{ fontSize: 13, color: T.mute }}>/ {num(GOAL.cal)}</span>
               </div>
             </div>
-            <div style={{ display: 'flex', gap: 12 }}>
+            <div style={{ display: 'flex', gap: 12, marginBottom: 16 }}>
               <MacroBar label="Protein" val={totals.p} goal={GOAL.p} color={T.protein} />
               <MacroBar label="Carbs" val={totals.c} goal={GOAL.c} color={T.carbs} />
               <MacroBar label="Fat" val={totals.f} goal={GOAL.f} color={T.fat} />
+            </div>
+            <div style={{ height: 1, background: T.hair, marginBottom: 14 }} />
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                {Ic.drop(16, T.water)}
+                <span style={{ fontSize: 11, color: T.mute, fontWeight: 600, letterSpacing: 0.6 }}>WATER</span>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'baseline', gap: 4, fontVariantNumeric: 'tabular-nums' }}>
+                <span style={{ fontSize: 14, fontWeight: 700, color: T.ink }}>{water}</span>
+                <span style={{ fontSize: 11, color: T.mute }}>/ {GOAL.water} cups</span>
+              </div>
+            </div>
+            <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+              <button onClick={() => setWater(Math.max(0, water - 1))} aria-label="Remove water" style={{
+                width: 26, height: 30, borderRadius: 7, background: T.bg, border: `1px solid ${T.hair2}`,
+                display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer',
+                color: T.ink2, flexShrink: 0,
+              }}>{Ic.minus(14)}</button>
+              <div style={{ flex: 1, display: 'flex', gap: 3 }}>
+                {Array.from({ length: GOAL.water }).map((_, i) => {
+                  const filled = i < water;
+                  return (
+                    <button key={i} onClick={() => setWater(i + 1 === water ? i : i + 1)} aria-label={`Set water to ${i + 1} cup${i ? 's' : ''}`} style={{
+                      flex: 1, height: 30, borderRadius: 5, padding: 0, border: 'none',
+                      background: filled ? T.water : 'transparent',
+                      boxShadow: filled ? 'none' : `inset 0 0 0 1.5px ${T.hair2}`,
+                      cursor: 'pointer', transition: 'background 250ms',
+                    }} />
+                  );
+                })}
+              </div>
+              <button onClick={() => setWater(Math.min(GOAL.water + 4, water + 1))} aria-label="Add water" style={{
+                width: 26, height: 30, borderRadius: 7, background: T.ink, border: 'none',
+                display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer',
+                color: '#fff', flexShrink: 0,
+              }}>{Ic.plus(14)}</button>
             </div>
           </div>
 
@@ -1426,7 +1520,7 @@
     // ═══════════════════════════════════════════════════════════════
     // Stats
     // ═══════════════════════════════════════════════════════════════
-    function Stats({ entriesByDate }) {
+    function Stats({ entriesByDate, waterByDate }) {
       const [range, setRange] = useState('week');
       const today = new Date();
       const todayDow = (today.getDay() + 6) % 7; // Mon=0 ... Sun=6
@@ -1495,6 +1589,15 @@
 
       // Avg protein across logged days
       const avgProtein = loggedCount ? Math.round(loggedTotals.reduce((s, t) => s + t.p, 0) / loggedCount) : 0;
+
+      // Avg water across days that have a water value > 0 in the visible range
+      const waterValues = dayKeys
+        .filter((_, i) => isPastOrToday[i])
+        .map(k => waterByDate?.[k] ?? 0);
+      const waterLoggedCount = waterValues.filter(v => v > 0).length;
+      const avgWater = waterLoggedCount
+        ? +(waterValues.filter(v => v > 0).reduce((a, b) => a + b, 0) / waterLoggedCount).toFixed(1)
+        : 0;
 
       // Avg macro split across logged days (calorie-weighted)
       const sumP = loggedTotals.reduce((s, t) => s + t.p, 0);
@@ -1589,7 +1692,7 @@
             <KPI label="Streak" value={String(streak)} unit={streak === 1 ? 'day' : 'days'} color={T.accent} />
             <KPI label="Goal hits" value={String(goalHits)} unit={`of ${totalDays}`} color={T.good} />
             <KPI label="Avg protein" value={hasData ? String(avgProtein) : '—'} unit="g" color={T.protein} />
-            <KPI label="Logged days" value={String(loggedCount)} unit={`of ${totalDays}`} color={T.water} />
+            <KPI label="Avg water" value={waterLoggedCount ? String(avgWater) : '—'} unit="cups" color={T.water} />
           </div>
 
           <div style={{
@@ -1985,8 +2088,9 @@
                                               waterByDate={waterByDate}
                                               selectedDate={selectedDate}
                                               setSelectedDate={setSelectedDate}
+                                              setWater={setWater}
                                               onOpenFood={(it) => setFoodDetail({ food: it, meal: it.meal, qty: it.qty, uid: it.uid })} />;
-      else if (tab === 'stats') main = <Stats entriesByDate={entriesByDate} />;
+      else if (tab === 'stats') main = <Stats entriesByDate={entriesByDate} waterByDate={waterByDate} />;
       else if (tab === 'profile') main = <Profile onResetData={handleResetData} />;
 
       return (
