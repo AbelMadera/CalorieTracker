@@ -2,18 +2,19 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <title>Macro — Calorie Counter</title>
   <style>
     *, *::before, *::after { box-sizing: border-box; }
-    html, body { margin: 0; padding: 0; height: 100%; }
+    html, body { margin: 0; padding: 0; height: 100%; touch-action: manipulation; }
     body {
       background: #E8E6E0;
       font-family: -apple-system, "SF Pro Display", system-ui, sans-serif;
       -webkit-font-smoothing: antialiased;
       overflow: hidden;
+      -webkit-text-size-adjust: 100%;
     }
     button { font-family: inherit; }
     button:active { transform: scale(0.98); }
