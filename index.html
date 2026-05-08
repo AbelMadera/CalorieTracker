@@ -1238,28 +1238,64 @@
     // ═══════════════════════════════════════════════════════════════
     // Diary
     // ═══════════════════════════════════════════════════════════════
-    function Diary({ entries, water, onOpenFood }) {
-      const [day, setDay] = useState(3);
-      const days = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
-      const dates = [4, 5, 6, 7, 8, 9, 10];
-      const cals = [1980, 2110, 1845, 0, 0, 0, 0];
-      const totals = entries.reduce((a, e) => ({
+    function Diary({ entriesByDate, waterByDate, selectedDate, setSelectedDate, onOpenFood }) {
+      const todayKey = dateKey();
+      const selected = parseDateKey(selectedDate);
+
+      // Anchor the visible week to the *selected* date's Monday.
+      const selectedDow = (selected.getDay() + 6) % 7;
+      const weekStart = addDays(selected, -selectedDow);
+      const week = Array.from({ length: 7 }, (_, i) => addDays(weekStart, i));
+      const weekKeys = week.map(dateKey);
+
+      const dayLetters = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
+
+      const entriesFor = (key) => entriesByDate[key] || [];
+      const totalsFor = (key) => entriesFor(key).reduce((a, e) => ({
         cal: a.cal + e.cal * e.qty, p: a.p + e.p * e.qty, c: a.c + e.c * e.qty, f: a.f + e.f * e.qty,
       }), { cal: 0, p: 0, c: 0, f: 0 });
-      cals[3] = Math.round(totals.cal);
+
+      const cals = weekKeys.map(k => Math.round(totalsFor(k).cal));
+      const totals = totalsFor(selectedDate);
+      const water = waterByDate[selectedDate] ?? 0;
+
+      const fmtMonthDay = (d) => d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }).toUpperCase();
+      const rangeLabel = `${fmtMonthDay(week[0])} — ${fmtMonthDay(week[6])}`;
 
       const meals = ['Breakfast', 'Lunch', 'Dinner', 'Snacks'];
+      const dayEntries = entriesFor(selectedDate);
       const mealData = meals.map(m => {
-        const items = entries.filter(e => e.meal === m);
+        const items = dayEntries.filter(e => e.meal === m);
         const cal = items.reduce((s, e) => s + e.cal * e.qty, 0);
         return { meal: m, items, cal };
       });
 
+      const goPrevWeek = () => setSelectedDate(dateKey(addDays(weekStart, -7)));
+      const goNextWeek = () => setSelectedDate(dateKey(addDays(weekStart, 7)));
+      // Don't let users navigate into the future
+      const nextWeekStart = addDays(weekStart, 7);
+      const canGoNext = nextWeekStart <= new Date();
+
       return (
         <div style={{ padding: '8px 20px 120px' }}>
-          <div style={{ marginBottom: 14 }}>
-            <div style={{ fontSize: 11, color: T.mute, fontWeight: 600, letterSpacing: 0.6 }}>MAY 4 — MAY 10</div>
-            <div style={{ fontSize: 26, fontWeight: 700, color: T.ink, letterSpacing: -0.6, marginTop: 2 }}>Diary</div>
+          <div style={{ marginBottom: 14, display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end' }}>
+            <div>
+              <div style={{ fontSize: 11, color: T.mute, fontWeight: 600, letterSpacing: 0.6 }}>{rangeLabel}</div>
+              <div style={{ fontSize: 26, fontWeight: 700, color: T.ink, letterSpacing: -0.6, marginTop: 2 }}>Diary</div>
+            </div>
+            <div style={{ display: 'flex', gap: 6 }}>
+              <button onClick={goPrevWeek} aria-label="Previous week" style={{
+                width: 32, height: 32, borderRadius: 16, background: T.card,
+                border: `1px solid ${T.hair}`, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                cursor: 'pointer', color: T.ink2,
+              }}>{Ic.back(16)}</button>
+              <button onClick={goNextWeek} disabled={!canGoNext} aria-label="Next week" style={{
+                width: 32, height: 32, borderRadius: 16, background: T.card,
+                border: `1px solid ${T.hair}`, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                cursor: canGoNext ? 'pointer' : 'not-allowed',
+                opacity: canGoNext ? 1 : 0.4, color: T.ink2,
+              }}>{Ic.chevR(16)}</button>
+            </div>
           </div>
 
           <div style={{
@@ -1267,20 +1303,22 @@
             border: `1px solid ${T.hair}`, marginBottom: 16,
             display: 'flex', justifyContent: 'space-between',
           }}>
-            {days.map((d, i) => {
-              const active = i === day;
-              const today = i === 3;
+            {week.map((d, i) => {
+              const k = weekKeys[i];
+              const active = k === selectedDate;
+              const isToday = k === todayKey;
+              const isFuture = d > new Date();
               const cal = cals[i];
               const ratio = cal === 0 ? 0 : Math.min(1, cal / GOAL.cal);
               return (
-                <button key={i} onClick={() => setDay(i)} style={{
+                <button key={k} onClick={() => !isFuture && setSelectedDate(k)} disabled={isFuture} style={{
                   flex: 1, padding: '6px 4px', background: active ? T.ink : 'none', border: 'none',
-                  borderRadius: 12, cursor: 'pointer',
+                  borderRadius: 12, cursor: isFuture ? 'not-allowed' : 'pointer',
                   display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4,
-                  color: active ? '#fff' : T.ink,
+                  color: active ? '#fff' : T.ink, opacity: isFuture ? 0.35 : 1,
                 }}>
-                  <div style={{ fontSize: 10, fontWeight: 600, opacity: active ? 0.7 : 0.5 }}>{d}</div>
-                  <div style={{ fontSize: 16, fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>{dates[i]}</div>
+                  <div style={{ fontSize: 10, fontWeight: 600, opacity: active ? 0.7 : 0.5 }}>{dayLetters[i]}</div>
+                  <div style={{ fontSize: 16, fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>{d.getDate()}</div>
                   {cal === 0 ? (
                     <div style={{ width: 4, height: 4, borderRadius: 2, background: active ? 'rgba(255,255,255,0.4)' : T.hair2 }} />
                   ) : (
@@ -1294,7 +1332,7 @@
                       }} />
                     </div>
                   )}
-                  {today && !active && (
+                  {isToday && !active && (
                     <div style={{ fontSize: 8, color: T.accent, fontWeight: 700, letterSpacing: 0.5, marginTop: -2 }}>TODAY</div>
                   )}
                 </button>
@@ -1308,10 +1346,10 @@
           }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 14 }}>
               <div>
-                <div style={{ fontSize: 11, color: T.mute, fontWeight: 600, letterSpacing: 0.6 }}>NET CALORIES</div>
+                <div style={{ fontSize: 11, color: T.mute, fontWeight: 600, letterSpacing: 0.6 }}>CALORIES</div>
                 <div style={{ display: 'flex', alignItems: 'baseline', gap: 6, marginTop: 2 }}>
                   <span style={{ fontSize: 28, fontWeight: 700, color: T.ink, letterSpacing: -0.8, fontVariantNumeric: 'tabular-nums' }}>
-                    {num(Math.max(0, Math.round(totals.cal - 412)))}
+                    {num(Math.round(totals.cal))}
                   </span>
                   <span style={{ fontSize: 13, color: T.mute }}>/ {num(GOAL.cal)}</span>
                 </div>
@@ -1333,54 +1371,53 @@
 
           <div style={{ fontSize: 13, fontWeight: 600, color: T.mute, marginBottom: 8, letterSpacing: 0.3 }}>TIMELINE</div>
           <div style={{ position: 'relative', paddingLeft: 0 }}>
-            {mealData.map(({ meal, items, cal }, mi) => {
-              const time = ['7:42 AM', '12:30 PM', '7:15 PM', 'Anytime'][mi];
-              return (
-                <div key={meal} style={{ display: 'flex', gap: 12, paddingBottom: 16 }}>
-                  <div style={{ width: 56, flexShrink: 0, paddingTop: 14 }}>
-                    <div style={{ fontSize: 11, color: T.mute, fontWeight: 600, letterSpacing: 0.3, fontVariantNumeric: 'tabular-nums' }}>{time}</div>
-                  </div>
-                  <div style={{ position: 'relative', width: 12, flexShrink: 0 }}>
-                    <div style={{
-                      position: 'absolute', top: 18, bottom: -8, left: 5, width: 2,
-                      background: T.hair, display: mi === 3 ? 'none' : 'block',
-                    }} />
-                    <div style={{
-                      position: 'absolute', top: 18, left: 0, width: 12, height: 12, borderRadius: 6,
-                      background: items.length > 0 ? T.ink : T.card,
-                      border: `2px solid ${items.length > 0 ? T.ink : T.hair2}`,
-                    }} />
-                  </div>
-                  <div style={{
-                    flex: 1, background: T.card, borderRadius: 14, padding: '12px 14px',
-                    border: `1px solid ${T.hair}`,
-                  }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: items.length > 0 ? 8 : 0 }}>
-                      <div style={{ fontSize: 14, fontWeight: 600, color: T.ink }}>{meal}</div>
-                      <div style={{ fontSize: 12, fontWeight: 600, color: items.length > 0 ? T.ink : T.mute, fontVariantNumeric: 'tabular-nums' }}>
-                        {items.length > 0 ? `${Math.round(cal)} kcal` : 'Not logged'}
-                      </div>
-                    </div>
-                    {items.map((it, i) => (
-                      <button key={it.uid} onClick={() => onOpenFood(it)} style={{
-                        width: '100%', padding: '6px 0', background: 'none', border: 'none',
-                        borderTop: i > 0 ? `1px dashed ${T.hair}` : `1px solid ${T.hair}`,
-                        display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-                        cursor: 'pointer', textAlign: 'left',
-                      }}>
-                        <div style={{ flex: 1, minWidth: 0 }}>
-                          <div style={{ fontSize: 12.5, color: T.ink, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{it.name}</div>
-                          <div style={{ fontSize: 10.5, color: T.mute, marginTop: 1 }}>{it.qty}× · {(it.p * it.qty).toFixed(0)}g P</div>
-                        </div>
-                        <div style={{ fontSize: 12, fontWeight: 600, color: T.ink2, fontVariantNumeric: 'tabular-nums' }}>
-                          {Math.round(it.cal * it.qty)}
-                        </div>
-                      </button>
-                    ))}
+            {mealData.map(({ meal, items, cal }, mi) => (
+              <div key={meal} style={{ display: 'flex', gap: 12, paddingBottom: 16 }}>
+                <div style={{ width: 56, flexShrink: 0, paddingTop: 14 }}>
+                  <div style={{ fontSize: 11, color: T.mute, fontWeight: 600, letterSpacing: 0.3, fontVariantNumeric: 'tabular-nums' }}>
+                    {items.length > 0 ? ['Morning', 'Midday', 'Evening', 'Anytime'][mi] : '—'}
                   </div>
                 </div>
-              );
-            })}
+                <div style={{ position: 'relative', width: 12, flexShrink: 0 }}>
+                  <div style={{
+                    position: 'absolute', top: 18, bottom: -8, left: 5, width: 2,
+                    background: T.hair, display: mi === 3 ? 'none' : 'block',
+                  }} />
+                  <div style={{
+                    position: 'absolute', top: 18, left: 0, width: 12, height: 12, borderRadius: 6,
+                    background: items.length > 0 ? T.ink : T.card,
+                    border: `2px solid ${items.length > 0 ? T.ink : T.hair2}`,
+                  }} />
+                </div>
+                <div style={{
+                  flex: 1, background: T.card, borderRadius: 14, padding: '12px 14px',
+                  border: `1px solid ${T.hair}`,
+                }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: items.length > 0 ? 8 : 0 }}>
+                    <div style={{ fontSize: 14, fontWeight: 600, color: T.ink }}>{meal}</div>
+                    <div style={{ fontSize: 12, fontWeight: 600, color: items.length > 0 ? T.ink : T.mute, fontVariantNumeric: 'tabular-nums' }}>
+                      {items.length > 0 ? `${Math.round(cal)} kcal` : 'Not logged'}
+                    </div>
+                  </div>
+                  {items.map((it, i) => (
+                    <button key={it.uid} onClick={() => onOpenFood(it)} style={{
+                      width: '100%', padding: '6px 0', background: 'none', border: 'none',
+                      borderTop: i > 0 ? `1px dashed ${T.hair}` : `1px solid ${T.hair}`,
+                      display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                      cursor: 'pointer', textAlign: 'left',
+                    }}>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontSize: 12.5, color: T.ink, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{it.name}</div>
+                        <div style={{ fontSize: 10.5, color: T.mute, marginTop: 1 }}>{it.qty}× · {(it.p * it.qty).toFixed(0)}g protein</div>
+                      </div>
+                      <div style={{ fontSize: 12, fontWeight: 600, color: T.ink2, fontVariantNumeric: 'tabular-nums' }}>
+                        {Math.round(it.cal * it.qty)}
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ))}
           </div>
         </div>
       );
@@ -1389,23 +1426,85 @@
     // ═══════════════════════════════════════════════════════════════
     // Stats
     // ═══════════════════════════════════════════════════════════════
-    function Stats({ entries }) {
+    function Stats({ entriesByDate }) {
       const [range, setRange] = useState('week');
+      const today = new Date();
+      const todayDow = (today.getDay() + 6) % 7; // Mon=0 ... Sun=6
 
-      const todayCal = Math.round(entries.reduce((s, e) => s + e.cal * e.qty, 0));
-      const weekData = [1980, 2110, 1845, todayCal, 2240, 2010, 1760];
       const dayLabels = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-      const avgWeek = Math.round(weekData.reduce((a, b) => a + b, 0) / 7);
 
-      const monthData = Array.from({ length: 28 }, (_, i) => {
-        const base = 2000 + Math.sin(i * 0.6) * 250 + (i % 7 === 5 || i % 7 === 6 ? 200 : 0);
-        return Math.round(base + ((i * 137) % 200) - 100);
-      });
-      const avgMonth = Math.round(monthData.reduce((a, b) => a + b, 0) / monthData.length);
+      // For "week": Mon..Sun of the current week
+      // For "month": last 28 days ending today
+      const days = (() => {
+        if (range === 'week') {
+          const monday = addDays(today, -todayDow);
+          return Array.from({ length: 7 }, (_, i) => addDays(monday, i));
+        }
+        return Array.from({ length: 28 }, (_, i) => addDays(today, -(27 - i)));
+      })();
+      const dayKeys = days.map(dateKey);
+      const todayKey = dateKey(today);
+      const todayIdxInRange = dayKeys.indexOf(todayKey);
 
-      const data = range === 'week' ? weekData : monthData;
+      const totalsFor = (key) => (entriesByDate[key] || []).reduce((a, e) => ({
+        cal: a.cal + e.cal * e.qty, p: a.p + e.p * e.qty, c: a.c + e.c * e.qty, f: a.f + e.f * e.qty,
+      }), { cal: 0, p: 0, c: 0, f: 0 });
+
+      // Don't include future days as "missing data" — clamp at today
+      const isPastOrToday = days.map(d => d <= today);
+      const dayTotals = dayKeys.map((k, i) => isPastOrToday[i] ? totalsFor(k) : null);
+      const data = dayTotals.map(t => t ? Math.round(t.cal) : 0);
+
+      const loggedTotals = dayTotals.filter(t => t && t.cal > 0);
+      const loggedCount = loggedTotals.length;
+      const hasData = loggedCount > 0;
+
+      const avg = loggedCount ? Math.round(loggedTotals.reduce((s, t) => s + t.cal, 0) / loggedCount) : 0;
       const max = Math.max(...data, GOAL.cal);
-      const avg = range === 'week' ? avgWeek : avgMonth;
+
+      // Goal hits = logged days within ±10% of calorie goal
+      const goalHits = loggedTotals.filter(t => t.cal >= GOAL.cal * 0.9 && t.cal <= GOAL.cal * 1.1).length;
+      const totalDays = days.length;
+
+      // Streak: consecutive days ending today (or yesterday if today is empty) with logged entries
+      const streak = (() => {
+        let s = 0;
+        // Walk backwards from today through every available date in storage (not just the visible range)
+        let cursor = new Date(today);
+        // If today has no entries, allow streak to continue from yesterday so an empty morning doesn't break it
+        let allowSkipToday = true;
+        while (true) {
+          const k = dateKey(cursor);
+          const t = totalsFor(k);
+          if (t.cal > 0) {
+            s += 1;
+            allowSkipToday = false;
+          } else {
+            if (allowSkipToday && dateKey(cursor) === todayKey) {
+              allowSkipToday = false;
+            } else {
+              break;
+            }
+          }
+          cursor = addDays(cursor, -1);
+          // Safety: don't loop more than a year
+          if (s > 365) break;
+        }
+        return s;
+      })();
+
+      // Avg protein across logged days
+      const avgProtein = loggedCount ? Math.round(loggedTotals.reduce((s, t) => s + t.p, 0) / loggedCount) : 0;
+
+      // Avg macro split across logged days (calorie-weighted)
+      const sumP = loggedTotals.reduce((s, t) => s + t.p, 0);
+      const sumC = loggedTotals.reduce((s, t) => s + t.c, 0);
+      const sumF = loggedTotals.reduce((s, t) => s + t.f, 0);
+      const pCal = sumP * 4, cCal = sumC * 4, fCal = sumF * 9;
+      const macroSum = pCal + cCal + fCal;
+      const pPct = macroSum ? Math.round((pCal / macroSum) * 100) : 0;
+      const cPct = macroSum ? Math.round((cCal / macroSum) * 100) : 0;
+      const fPct = macroSum ? 100 - pPct - cPct : 0;
 
       return (
         <div style={{ padding: '8px 20px 120px' }}>
@@ -1423,7 +1522,7 @@
                 flex: 1, padding: '8px', background: range === r ? T.ink : 'transparent',
                 color: range === r ? '#fff' : T.ink2, fontWeight: 600, fontSize: 13,
                 border: 'none', borderRadius: 9, cursor: 'pointer', textTransform: 'capitalize',
-              }}>{r === 'week' ? 'This week' : 'This month'}</button>
+              }}>{r === 'week' ? 'This week' : 'Last 28 days'}</button>
             ))}
           </div>
 
@@ -1432,14 +1531,16 @@
           }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 4 }}>
               <div>
-                <div style={{ fontSize: 11, color: T.mute, fontWeight: 600, letterSpacing: 0.6 }}>AVG CALORIES / DAY</div>
+                <div style={{ fontSize: 11, color: T.mute, fontWeight: 600, letterSpacing: 0.6 }}>AVG CALORIES / LOGGED DAY</div>
                 <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, marginTop: 4 }}>
                   <span style={{ fontSize: 30, fontWeight: 700, color: T.ink, letterSpacing: -0.8, fontVariantNumeric: 'tabular-nums' }}>
-                    {num(avg)}
+                    {hasData ? num(avg) : '—'}
                   </span>
-                  <span style={{ fontSize: 13, color: T.good, fontWeight: 600 }}>
-                    {avg < GOAL.cal ? `${num(GOAL.cal - avg)} under goal` : `${num(avg - GOAL.cal)} over`}
-                  </span>
+                  {hasData && (
+                    <span style={{ fontSize: 13, color: avg < GOAL.cal ? T.good : T.warn, fontWeight: 600 }}>
+                      {avg < GOAL.cal ? `${num(GOAL.cal - avg)} under goal` : `${num(avg - GOAL.cal)} over`}
+                    </span>
+                  )}
                 </div>
               </div>
             </div>
@@ -1459,58 +1560,71 @@
                 {data.map((v, i) => {
                   const h = (v / max) * 100;
                   const over = v > GOAL.cal;
+                  const isToday = i === todayIdxInRange;
                   return (
                     <div key={i} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6, height: '100%', justifyContent: 'flex-end' }}>
                       <div style={{
                         width: '100%', height: `${h}%`, borderRadius: range === 'week' ? 4 : 2,
-                        background: over ? T.warn : (i === 3 && range === 'week' ? T.ink : T.cal),
-                        opacity: i === 3 && range === 'week' ? 1 : (over ? 0.7 : 0.85),
+                        background: over ? T.warn : (isToday ? T.ink : T.cal),
+                        opacity: isToday ? 1 : (over ? 0.7 : 0.85),
                         transition: 'height 400ms',
                       }} />
                       {range === 'week' && (
-                        <div style={{ fontSize: 10, color: i === 3 ? T.ink : T.mute, fontWeight: i === 3 ? 700 : 500 }}>{dayLabels[i]}</div>
+                        <div style={{ fontSize: 10, color: isToday ? T.ink : T.mute, fontWeight: isToday ? 700 : 500 }}>{dayLabels[i]}</div>
                       )}
                     </div>
                   );
                 })}
               </div>
+              {!hasData && (
+                <div style={{
+                  position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  fontSize: 12, color: T.mute, fontWeight: 500,
+                }}>No data logged yet</div>
+              )}
             </div>
           </div>
 
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 12 }}>
-            <KPI label="Streak" value="11" unit="days" color={T.accent} />
-            <KPI label="Goal hits" value="5" unit={`of ${range === 'week' ? '7' : '28'}`} color={T.good} />
-            <KPI label="Avg protein" value="148" unit="g" color={T.protein} />
-            <KPI label="Avg water" value="6.4" unit="cups" color={T.water} />
+            <KPI label="Streak" value={String(streak)} unit={streak === 1 ? 'day' : 'days'} color={T.accent} />
+            <KPI label="Goal hits" value={String(goalHits)} unit={`of ${totalDays}`} color={T.good} />
+            <KPI label="Avg protein" value={hasData ? String(avgProtein) : '—'} unit="g" color={T.protein} />
+            <KPI label="Logged days" value={String(loggedCount)} unit={`of ${totalDays}`} color={T.water} />
           </div>
 
           <div style={{
             background: T.card, borderRadius: 20, padding: '18px', border: `1px solid ${T.hair}`,
           }}>
             <div style={{ fontSize: 11, color: T.mute, fontWeight: 600, letterSpacing: 0.6, marginBottom: 12 }}>AVG MACRO SPLIT</div>
-            <div style={{ display: 'flex', height: 14, borderRadius: 7, overflow: 'hidden', marginBottom: 12 }}>
-              <div style={{ flex: 30, background: T.protein }} />
-              <div style={{ flex: 45, background: T.carbs }} />
-              <div style={{ flex: 25, background: T.fat }} />
-            </div>
-            <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-              {[
-                { l: 'Protein', v: '30%', c: T.protein, g: '148g' },
-                { l: 'Carbs', v: '45%', c: T.carbs, g: '212g' },
-                { l: 'Fat', v: '25%', c: T.fat, g: '68g' },
-              ].map(m => (
-                <div key={m.l} style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-                    <div style={{ width: 6, height: 6, borderRadius: 3, background: m.c }} />
-                    <span style={{ fontSize: 11, color: T.mute, fontWeight: 500 }}>{m.l}</span>
-                  </div>
-                  <div style={{ display: 'flex', alignItems: 'baseline', gap: 4 }}>
-                    <span style={{ fontSize: 18, fontWeight: 700, color: T.ink, fontVariantNumeric: 'tabular-nums', letterSpacing: -0.3 }}>{m.v}</span>
-                    <span style={{ fontSize: 10, color: T.mute }}>{m.g}</span>
-                  </div>
+            {macroSum > 0 ? (
+              <Fragment>
+                <div style={{ display: 'flex', height: 14, borderRadius: 7, overflow: 'hidden', marginBottom: 12 }}>
+                  <div style={{ flex: pPct || 0.001, background: T.protein }} />
+                  <div style={{ flex: cPct || 0.001, background: T.carbs }} />
+                  <div style={{ flex: fPct || 0.001, background: T.fat }} />
                 </div>
-              ))}
-            </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                  {[
+                    { l: 'Protein', v: `${pPct}%`, c: T.protein, g: `${Math.round(sumP / loggedCount)}g` },
+                    { l: 'Carbs', v: `${cPct}%`, c: T.carbs, g: `${Math.round(sumC / loggedCount)}g` },
+                    { l: 'Fat', v: `${fPct}%`, c: T.fat, g: `${Math.round(sumF / loggedCount)}g` },
+                  ].map(m => (
+                    <div key={m.l} style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                        <div style={{ width: 6, height: 6, borderRadius: 3, background: m.c }} />
+                        <span style={{ fontSize: 11, color: T.mute, fontWeight: 500 }}>{m.l}</span>
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'baseline', gap: 4 }}>
+                        <span style={{ fontSize: 18, fontWeight: 700, color: T.ink, fontVariantNumeric: 'tabular-nums', letterSpacing: -0.3 }}>{m.v}</span>
+                        <span style={{ fontSize: 10, color: T.mute }}>{m.g}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </Fragment>
+            ) : (
+              <div style={{ fontSize: 12, color: T.mute, padding: '8px 0' }}>Log a meal to see your macro split.</div>
+            )}
           </div>
         </div>
       );
@@ -1682,8 +1796,9 @@
     // ═══════════════════════════════════════════════════════════════
     // App shell
     // ═══════════════════════════════════════════════════════════════
-    const STORAGE_KEY = 'macro-app-v1';
-    const DEFAULT_ENTRIES = [
+    const STORAGE_KEY = 'macro-app-v2';
+    const LEGACY_KEY = 'macro-app-v1';
+    const DEFAULT_TODAY_ENTRIES = [
       { ...FOOD_DB[0], qty: 1, meal: 'Breakfast', uid: 'e1' },
       { ...FOOD_DB[1], qty: 1, meal: 'Breakfast', uid: 'e2' },
       { ...FOOD_DB[2], qty: 1, meal: 'Breakfast', uid: 'e3' },
@@ -1694,12 +1809,42 @@
       { ...FOOD_DB[6], qty: 1, meal: 'Lunch', uid: 'e8' },
     ];
 
+    // Date helpers — work in local time so "today" matches the device clock.
+    const dateKey = (d = new Date()) => {
+      const y = d.getFullYear();
+      const m = String(d.getMonth() + 1).padStart(2, '0');
+      const day = String(d.getDate()).padStart(2, '0');
+      return `${y}-${m}-${day}`;
+    };
+    const parseDateKey = (k) => {
+      const [y, m, d] = k.split('-').map(Number);
+      return new Date(y, m - 1, d);
+    };
+    const addDays = (d, n) => {
+      const r = new Date(d);
+      r.setDate(r.getDate() + n);
+      return r;
+    };
+
     function loadState() {
       try {
         const raw = localStorage.getItem(STORAGE_KEY);
-        if (!raw) return null;
-        const s = JSON.parse(raw);
-        return s;
+        if (raw) return JSON.parse(raw);
+        // Migrate from v1 if present (treat the old flat entries/water as today's bucket).
+        const legacy = localStorage.getItem(LEGACY_KEY);
+        if (legacy) {
+          const old = JSON.parse(legacy);
+          const todayKey = dateKey();
+          return {
+            entriesByDate: { [todayKey]: old.entries || DEFAULT_TODAY_ENTRIES },
+            waterByDate: { [todayKey]: old.water ?? 5 },
+            customFoods: old.customFoods || [],
+            favorites: old.favorites || DEFAULT_FAVORITE_IDS,
+            uidCounter: old.uidCounter || 100,
+            customFoodCounter: old.customFoodCounter || 1,
+          };
+        }
+        return null;
       } catch { return null; }
     }
 
@@ -1709,26 +1854,57 @@
 
     function App() {
       const saved = loadState();
+      const todayKey = dateKey();
+
       const [tab, setTab] = useState('home');
       const [addingMeal, setAddingMeal] = useState(null);
       const [scanning, setScanning] = useState(false);
       const [foodDetail, setFoodDetail] = useState(null);
-      const [entries, setEntries] = useState(saved?.entries || DEFAULT_ENTRIES);
+
+      // Date-keyed history. Seed today's bucket with defaults on first run.
+      const [entriesByDate, setEntriesByDate] = useState(
+        saved?.entriesByDate || { [todayKey]: DEFAULT_TODAY_ENTRIES }
+      );
+      const [waterByDate, setWaterByDate] = useState(
+        saved?.waterByDate || { [todayKey]: 5 }
+      );
+      const [selectedDate, setSelectedDate] = useState(todayKey);
+
       const [customFoods, setCustomFoods] = useState(saved?.customFoods || []);
-      const [water, setWater] = useState(saved?.water ?? 5);
       const [favorites, setFavorites] = useState(new Set(saved?.favorites || DEFAULT_FAVORITE_IDS));
       const [toast, setToast] = useState(null);
       const uidRef = useRef(saved?.uidCounter || 100);
       const customFoodRef = useRef(saved?.customFoodCounter || ((saved?.customFoods?.length || 0) + 1));
       const foods = useMemo(() => [...FOOD_DB, ...customFoods], [customFoods]);
 
+      // Entries/water for the currently selected date
+      const entries = entriesByDate[selectedDate] || [];
+      const water = waterByDate[selectedDate] ?? 0;
+
+      // Setters scoped to the selected date
+      const setEntries = (updater) => {
+        setEntriesByDate(prev => {
+          const cur = prev[selectedDate] || [];
+          const next = typeof updater === 'function' ? updater(cur) : updater;
+          return { ...prev, [selectedDate]: next };
+        });
+      };
+      const setWater = (val) => {
+        setWaterByDate(prev => {
+          const cur = prev[selectedDate] ?? 0;
+          const next = typeof val === 'function' ? val(cur) : val;
+          return { ...prev, [selectedDate]: next };
+        });
+      };
+
       // Persist
       useEffect(() => {
         saveState({
-          entries, customFoods, water, favorites: Array.from(favorites),
+          entriesByDate, waterByDate, customFoods,
+          favorites: Array.from(favorites),
           uidCounter: uidRef.current, customFoodCounter: customFoodRef.current,
         });
-      }, [entries, customFoods, water, favorites]);
+      }, [entriesByDate, waterByDate, customFoods, favorites]);
 
       const showToast = (msg) => {
         setToast(msg);
@@ -1746,22 +1922,26 @@
         const nextFood = { ...food, id: 'custom-' + customFoodRef.current };
         customFoodRef.current += 1;
         uidRef.current += 1;
+        const newUid = 'u' + uidRef.current;
         setCustomFoods(prev => [nextFood, ...prev]);
         if (favorite) setFavorites(prev => new Set([...prev, nextFood.id]));
-        setEntries(prev => [...prev, { ...nextFood, qty, meal, uid: 'u' + uidRef.current }]);
+        setEntries(prev => [...prev, { ...nextFood, qty, meal, uid: newUid }]);
         setAddingMeal(null);
         showToast(`Added ${nextFood.name}`);
       };
 
       const handleLog = (entry) => {
         const isUpdate = entry.uid && entries.some(e => e.uid === entry.uid);
-        if (!isUpdate) uidRef.current += 1;
+        let newUid = entry.uid;
+        if (!isUpdate) {
+          uidRef.current += 1;
+          newUid = 'u' + uidRef.current;
+        }
         setEntries(prev => {
-          // If editing an existing entry (same uid), replace it
           if (entry.uid && prev.some(e => e.uid === entry.uid)) {
             return prev.map(e => e.uid === entry.uid ? entry : e);
           }
-          return [...prev, { ...entry, uid: 'u' + uidRef.current }];
+          return [...prev, { ...entry, uid: newUid }];
         });
         setFoodDetail(null);
         setScanning(false);
@@ -1784,9 +1964,11 @@
 
       const handleResetData = () => {
         if (confirm('Reset all data to defaults? This cannot be undone.')) {
-          setEntries(DEFAULT_ENTRIES);
+          const k = dateKey();
+          setEntriesByDate({ [k]: DEFAULT_TODAY_ENTRIES });
+          setWaterByDate({ [k]: 5 });
+          setSelectedDate(k);
           setCustomFoods([]);
-          setWater(5);
           setFavorites(new Set(DEFAULT_FAVORITE_IDS));
           uidRef.current = 100;
           customFoodRef.current = 1;
@@ -1798,9 +1980,13 @@
       if (tab === 'home') main = <Dashboard entries={entries} water={water} setWater={setWater}
                                             onOpenFood={(it) => setFoodDetail({ food: it, meal: it.meal, qty: it.qty, uid: it.uid })}
                                             onAdd={openAdd} />;
-      else if (tab === 'diary') main = <Diary entries={entries} water={water}
+      else if (tab === 'diary') main = <Diary
+                                              entriesByDate={entriesByDate}
+                                              waterByDate={waterByDate}
+                                              selectedDate={selectedDate}
+                                              setSelectedDate={setSelectedDate}
                                               onOpenFood={(it) => setFoodDetail({ food: it, meal: it.meal, qty: it.qty, uid: it.uid })} />;
-      else if (tab === 'stats') main = <Stats entries={entries} />;
+      else if (tab === 'stats') main = <Stats entriesByDate={entriesByDate} />;
       else if (tab === 'profile') main = <Profile onResetData={handleResetData} />;
 
       return (
