@@ -697,14 +697,15 @@
       );
     }
 
-    function CustomFoodForm({ meal: initialMeal, onBack, onCreate }) {
-      const [name, setName] = useState('');
-      const [brand, setBrand] = useState('');
-      const [serving, setServing] = useState('');
-      const [cal, setCal] = useState('');
-      const [p, setP] = useState('');
-      const [c, setC] = useState('');
-      const [f, setF] = useState('');
+    function CustomFoodForm({ meal: initialMeal, onBack, onCreate, initial }) {
+      const pre = (v) => (v === 0 || v) ? String(v) : '';
+      const [name, setName] = useState(initial?.name || '');
+      const [brand, setBrand] = useState(initial?.brand || '');
+      const [serving, setServing] = useState(initial?.serving || '');
+      const [cal, setCal] = useState(pre(initial?.cal));
+      const [p, setP] = useState(pre(initial?.p));
+      const [c, setC] = useState(pre(initial?.c));
+      const [f, setF] = useState(pre(initial?.f));
       const [qty, setQty] = useState(1);
       const [meal, setMeal] = useState(initialMeal || 'Breakfast');
       const [fav, setFav] = useState(false);
@@ -733,6 +734,7 @@
             p: toNum(p),
             c: toNum(c),
             f: toNum(f),
+            barcode: initial?.barcode, // remembered — future scans match your corrected version
             custom: true,
           },
           qty,
@@ -951,7 +953,7 @@
     // ═══════════════════════════════════════════════════════════════
     // Scanner
     // ═══════════════════════════════════════════════════════════════
-    function Scanner({ foods, onClose, onMatch }) {
+    function Scanner({ foods, onClose, onMatch, onEdit }) {
       // status: starting | scanning | looking | matched | error
       const [status, setStatus] = useState('starting');
       const [matched, setMatched] = useState(null);
@@ -989,22 +991,44 @@
         if (data.status !== 1 || !data.product) return null;
         const p = data.product;
         const n = p.nutriments || {};
-        const perServing = n['energy-kcal_serving'] != null;
-        const grab = (key) => {
-          const v = perServing ? n[key + '_serving'] : n[key + '_100g'];
+        const num = (v) => {
+          const x = typeof v === 'number' ? v : (v != null && v !== '' ? +v : NaN);
+          return isFinite(x) ? x : null;
+        };
+        // Calories, with kJ→kcal fallback (some entries only list kilojoules)
+        const kcal100 = num(n['energy-kcal_100g']) ?? (num(n['energy_100g']) != null ? num(n['energy_100g']) / 4.184 : null);
+        const kcalServ = num(n['energy-kcal_serving']) ?? (num(n['energy_serving']) != null ? num(n['energy_serving']) / 4.184 : null);
+        const servQty = num(p.serving_quantity); // serving size in g or ml
+        // Use per-serving numbers when we can get them directly OR compute
+        // them from per-100g + the serving weight. Decide per field, so one
+        // missing value no longer zeroes out a macro.
+        const useServing = kcalServ != null || (servQty != null && kcal100 != null);
+        const pick = (key) => {
+          const s = num(n[key + '_serving']);
+          const h = num(n[key + '_100g']);
+          let v = null;
+          if (useServing) {
+            if (s != null) v = s;
+            else if (h != null && servQty != null) v = h * servQty / 100;
+          } else {
+            v = h;
+          }
           return v == null ? 0 : Math.round(v * 10) / 10;
         };
-        const cal = Math.round((perServing ? n['energy-kcal_serving'] : n['energy-kcal_100g']) || 0);
+        const calRaw = useServing
+          ? (kcalServ != null ? kcalServ : (kcal100 || 0) * (servQty || 0) / 100)
+          : (kcal100 || 0);
         return {
           id: 'scan-' + code,
           name: p.product_name || p.generic_name || 'Unknown product',
           brand: p.brands ? p.brands.split(',')[0].trim() : '',
-          serving: perServing ? (p.serving_size || '1 serving') : 'per 100 g',
-          cal,
-          p: grab('proteins'),
-          c: grab('carbohydrates'),
-          f: grab('fat'),
+          serving: useServing ? (p.serving_size || (servQty ? servQty + ' g' : '1 serving')) : 'per 100 g',
+          cal: Math.round(calRaw),
+          p: pick('proteins'),
+          c: pick('carbohydrates'),
+          f: pick('fat'),
           barcode: code,
+          fromOFF: true, // community data — user should be able to correct it
         };
       };
 
@@ -1048,7 +1072,7 @@
         let detector;
         try {
           detector = new BarcodeDetector({
-            formats: ['ean_13', 'ean_8', 'upc_a', 'upc_e', 'code_128', 'qr_code'],
+            formats: ['ean_13', 'ean_8', 'upc_a', 'upc_e', 'code_128'],
           });
         } catch (e) { return; }
         const tick = async () => {
@@ -1086,7 +1110,8 @@
               Html5QrcodeSupportedFormats.UPC_A,
               Html5QrcodeSupportedFormats.UPC_E,
               Html5QrcodeSupportedFormats.CODE_128,
-              Html5QrcodeSupportedFormats.QR_CODE,
+              // QR intentionally excluded: food packages put marketing QR
+              // codes right next to the UPC and they steal the detection.
             ],
           });
         } catch (e) {
@@ -1260,6 +1285,17 @@
                   ))}
                 </div>
               )}
+              <div>
+                <button onClick={() => {
+                  const v = prompt('Type the numbers printed under the barcode:');
+                  if (v) handleDecode(v.replace(/\D/g, ''));
+                }} style={{
+                  marginTop: 12, padding: '9px 16px', borderRadius: 18, border: 'none',
+                  background: 'rgba(255,255,255,0.15)',
+                  backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)',
+                  fontSize: 12, fontWeight: 600, color: '#fff', cursor: 'pointer',
+                }}>Enter code manually</button>
+              </div>
             </div>
           )}
 
@@ -1301,11 +1337,25 @@
                     </div>
                   </div>
                 </div>
+                {matched.fromOFF && (
+                  <div style={{
+                    fontSize: 11, color: T.mute, marginBottom: 12, lineHeight: 1.45,
+                    padding: '8px 10px', background: T.bg, borderRadius: 10, border: `1px solid ${T.hair}`,
+                  }}>
+                    From Open Food Facts (community data). If it doesn't match the label, tap Edit — your correction is saved for next time.
+                  </div>
+                )}
                 <div style={{ display: 'flex', gap: 8 }}>
                   <button onClick={scanAgain} style={{
-                    padding: '14px 20px', borderRadius: 14, background: T.bg, border: `1px solid ${T.hair2}`,
+                    padding: '14px 16px', borderRadius: 14, background: T.bg, border: `1px solid ${T.hair2}`,
                     fontWeight: 600, fontSize: 14, color: T.ink, cursor: 'pointer',
-                  }}>Scan again</button>
+                  }}>Rescan</button>
+                  {matched.fromOFF && onEdit && (
+                    <button onClick={() => onEdit(matched)} style={{
+                      padding: '14px 16px', borderRadius: 14, background: T.bg, border: `1px solid ${T.hair2}`,
+                      fontWeight: 600, fontSize: 14, color: T.ink, cursor: 'pointer',
+                    }}>Edit</button>
+                  )}
                   <button onClick={() => onMatch(matched)} style={{
                     flex: 1, padding: '14px', borderRadius: 14, background: T.ink, border: 'none',
                     fontWeight: 600, fontSize: 14, color: '#fff', cursor: 'pointer',
@@ -2199,6 +2249,7 @@
       const [tab, setTab] = useState('home');
       const [addingMeal, setAddingMeal] = useState(null);
       const [scanning, setScanning] = useState(false);
+      const [scanEdit, setScanEdit] = useState(null); // scanned food being corrected
       const [foodDetail, setFoodDetail] = useState(null);
 
       // Date-keyed history. Seed today's bucket with defaults on first run.
@@ -2342,7 +2393,7 @@
                 {main}
               </div>
 
-              {!addingMeal && !scanning && !foodDetail && (
+              {!addingMeal && !scanning && !scanEdit && !foodDetail && (
                 <TabBar tab={tab} setTab={setTab} onAdd={() => openAdd('Breakfast')} />
               )}
 
@@ -2367,6 +2418,18 @@
                     foods={foods}
                     onClose={() => setScanning(false)}
                     onMatch={(f) => { setScanning(false); setFoodDetail({ food: f, meal: 'Snacks', qty: 1 }); }}
+                    onEdit={(f) => { setScanning(false); setScanEdit(f); }}
+                  />
+                </div>
+              )}
+
+              {scanEdit && (
+                <div style={{ position: 'absolute', inset: 0, background: T.bg, zIndex: 115 }}>
+                  <CustomFoodForm
+                    meal="Snacks"
+                    initial={scanEdit}
+                    onBack={() => { setScanEdit(null); setScanning(true); }}
+                    onCreate={(payload) => { setScanEdit(null); handleCreateCustomFood(payload); }}
                   />
                 </div>
               )}
