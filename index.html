@@ -957,9 +957,26 @@
       const [matched, setMatched] = useState(null);
       const [errorMsg, setErrorMsg] = useState('');
       const [flash, setFlash] = useState(false);
+      const [zoom, setZoom] = useState(1);
+      const [zoomMax, setZoomMax] = useState(0); // 0 = zoom unsupported
       const scannerRef = useRef(null);
       const lockRef = useRef(false);
+      const stopRef = useRef(false);
+      const containerRef = useRef(null);
+      const trackerRef = useRef(null);
+      const missRef = useRef(0);
       const scanning = status === 'scanning';
+
+      // EAN-8 / UPC-A / EAN-13 check-digit validation — rejects one-off
+      // misreads so a bad frame never sends you to the wrong product.
+      const validCheckDigit = (code) => {
+        if (![8, 12, 13].includes(code.length)) return true;
+        const digits = code.split('').map(Number);
+        const check = digits.pop();
+        let sum = 0;
+        digits.reverse().forEach((d, i) => { sum += d * (i % 2 === 0 ? 3 : 1); });
+        return (10 - (sum % 10)) % 10 === check;
+      };
 
       // Look up a barcode: local food DB first, then Open Food Facts
       const lookupBarcode = async (code) => {
@@ -993,13 +1010,11 @@
 
       const handleDecode = async (text) => {
         if (lockRef.current) return;
-        lockRef.current = true;
         const code = (text || '').trim();
-        if (!/^\d{6,14}$/.test(code)) {
-          setErrorMsg('That code is not a product barcode.');
-          setStatus('error');
-          return;
-        }
+        if (!/^\d{6,14}$/.test(code)) return;        // not a product code — keep scanning
+        if (!validCheckDigit(code)) return;          // likely misread frame — keep scanning
+        lockRef.current = true;
+        if (navigator.vibrate) navigator.vibrate(60); // haptic confirmation
         setStatus('looking');
         try {
           const food = await lookupBarcode(code);
@@ -1011,12 +1026,60 @@
         }
       };
 
+      // Live tracker: draws a box that follows the barcode in the frame,
+      // so you can see the moment the camera locks onto it.
+      const positionTracker = (box, video) => {
+        const el = trackerRef.current, wrap = containerRef.current;
+        if (!el || !wrap || !video.videoWidth) return;
+        const rect = wrap.getBoundingClientRect();
+        // video uses object-fit: cover — map video coords to screen coords
+        const scale = Math.max(rect.width / video.videoWidth, rect.height / video.videoHeight);
+        const offX = (rect.width - video.videoWidth * scale) / 2;
+        const offY = (rect.height - video.videoHeight * scale) / 2;
+        const pad = 6;
+        el.style.opacity = '1';
+        el.style.transform = `translate(${box.x * scale + offX - pad}px, ${box.y * scale + offY - pad}px)`;
+        el.style.width = (box.width * scale + pad * 2) + 'px';
+        el.style.height = (box.height * scale + pad * 2) + 'px';
+      };
+
+      const startDetectorLoop = () => {
+        if (!('BarcodeDetector' in window)) return;
+        let detector;
+        try {
+          detector = new BarcodeDetector({
+            formats: ['ean_13', 'ean_8', 'upc_a', 'upc_e', 'code_128', 'qr_code'],
+          });
+        } catch (e) { return; }
+        const tick = async () => {
+          if (stopRef.current) return;
+          const video = document.querySelector('#qr-reader video');
+          if (video && video.readyState >= 2 && !lockRef.current) {
+            try {
+              const codes = await detector.detect(video);
+              if (codes.length) {
+                missRef.current = 0;
+                positionTracker(codes[0].boundingBox, video);
+                if (codes[0].rawValue) handleDecode(codes[0].rawValue);
+              } else if (++missRef.current > 4 && trackerRef.current) {
+                trackerRef.current.style.opacity = '0'; // fade only after a few empty frames
+              }
+            } catch (e) {}
+          }
+          setTimeout(tick, 70);
+        };
+        tick();
+      };
+
       useEffect(() => {
         let cancelled = false;
         let scanner;
         try {
           scanner = new Html5Qrcode('qr-reader', {
             verbose: false,
+            // Use the browser's native barcode engine when available — much
+            // faster and more tolerant of angle/blur than the JS decoder.
+            experimentalFeatures: { useBarCodeDetectorIfSupported: true },
             formatsToSupport: [
               Html5QrcodeSupportedFormats.EAN_13,
               Html5QrcodeSupportedFormats.EAN_8,
@@ -1034,18 +1097,37 @@
         scannerRef.current = scanner;
         scanner.start(
           { facingMode: 'environment' },
-          { fps: 10 },
+          {
+            fps: 15, // scan more frames per second
+            videoConstraints: {
+              facingMode: 'environment',
+              width: { ideal: 1920 },   // higher resolution = reads smaller
+              height: { ideal: 1080 },  // and farther-away barcodes
+              advanced: [{ focusMode: 'continuous' }], // keep autofocus hunting
+            },
+          },
           (text) => handleDecode(text),
           () => {} // per-frame "no code found" — ignore
-        ).then(() => { if (!cancelled) setStatus('scanning'); })
-         .catch(() => {
-           if (!cancelled) {
-             setErrorMsg('Camera unavailable. Allow camera access (requires HTTPS or localhost).');
-             setStatus('error');
-           }
-         });
+        ).then(() => {
+          if (cancelled) return;
+          setStatus('scanning');
+          startDetectorLoop();
+          // Enable pinchless zoom buttons if the camera supports zoom
+          try {
+            const caps = scanner.getRunningTrackCapabilities();
+            if (caps && caps.zoom && caps.zoom.max > 1) {
+              setZoomMax(Math.min(caps.zoom.max, 5));
+            }
+          } catch (e) {}
+        }).catch(() => {
+          if (!cancelled) {
+            setErrorMsg('Camera unavailable. Allow camera access (requires HTTPS or localhost).');
+            setStatus('error');
+          }
+        });
         return () => {
           cancelled = true;
+          stopRef.current = true;
           if (scanner && scanner.isScanning) {
             scanner.stop().then(() => scanner.clear()).catch(() => {});
           } else if (scanner) {
@@ -1053,6 +1135,14 @@
           }
         };
       }, []);
+
+      const applyZoom = (z) => {
+        const s = scannerRef.current;
+        if (!s || !s.isScanning) return;
+        s.applyVideoConstraints({ advanced: [{ zoom: z }] })
+          .then(() => setZoom(z))
+          .catch(() => {});
+      };
 
       const toggleFlash = () => {
         const s = scannerRef.current;
@@ -1068,6 +1158,8 @@
         setErrorMsg('');
         setStatus('scanning');
         lockRef.current = false;
+        missRef.current = 0;
+        if (trackerRef.current) trackerRef.current.style.opacity = '0';
       };
 
       const statusLabel = {
@@ -1079,8 +1171,17 @@
       }[status];
 
       return (
-        <div style={{ height: '100%', position: 'relative', background: '#000', overflow: 'hidden' }}>
+        <div ref={containerRef} style={{ height: '100%', position: 'relative', background: '#000', overflow: 'hidden' }}>
           <div id="qr-reader" style={{ position: 'absolute', inset: 0, background: '#0d0f12' }} />
+
+          {/* Live tracker — follows the barcode once the camera sees it */}
+          <div ref={trackerRef} style={{
+            position: 'absolute', top: 0, left: 0, opacity: 0,
+            border: `2.5px solid ${T.good}`, borderRadius: 10,
+            boxShadow: `0 0 16px ${T.good}88, inset 0 0 16px ${T.good}44`,
+            transition: 'transform 90ms linear, width 90ms linear, height 90ms linear, opacity 200ms ease',
+            pointerEvents: 'none', zIndex: 4,
+          }} />
 
           <div style={{
             position: 'absolute', inset: 0,
@@ -1143,6 +1244,22 @@
               <div style={{ fontSize: 13, color: 'rgba(255,255,255,0.85)', fontWeight: 500 }}>
                 Center the barcode in the frame
               </div>
+              {zoomMax > 1 && (
+                <div style={{
+                  display: 'inline-flex', gap: 4, marginTop: 14, padding: 4,
+                  borderRadius: 20, background: 'rgba(255,255,255,0.15)',
+                  backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)',
+                }}>
+                  {[1, 2, Math.min(3, zoomMax)].filter((z, i, a) => z <= zoomMax && a.indexOf(z) === i).map(z => (
+                    <button key={z} onClick={() => applyZoom(z)} style={{
+                      minWidth: 40, padding: '7px 10px', borderRadius: 16, border: 'none',
+                      background: zoom === z ? '#fff' : 'transparent',
+                      color: zoom === z ? T.ink : '#fff',
+                      fontSize: 12, fontWeight: 700, cursor: 'pointer',
+                    }}>{z}×</button>
+                  ))}
+                </div>
+              )}
             </div>
           )}
 
