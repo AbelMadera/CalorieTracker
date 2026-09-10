@@ -5,6 +5,11 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="theme-color" content="#FAFAF7">
+  <meta name="screen-orientation" content="portrait">
+  <meta name="x5-orientation" content="portrait">
+  <!-- Installed/standalone launches open portrait-only -->
+  <link rel="manifest" href='data:application/manifest+json,{"name":"Macro","short_name":"Macro","display":"standalone","orientation":"portrait-primary","start_url":"."}'>
   <link rel="apple-touch-icon" href="images/app-icon.jpg">
   <link rel="apple-touch-icon-precomposed" href="images/app-icon.jpg">
   <link rel="icon" type="image/jpeg" href="images/app-icon.jpg">
@@ -13,7 +18,7 @@
     *, *::before, *::after { box-sizing: border-box; }
     html, body { margin: 0; padding: 0; height: 100%; touch-action: manipulation; }
     body {
-      background: #E8E6E0;
+      background: var(--stage-bg, #E8E6E0);
       font-family: -apple-system, "SF Pro Display", system-ui, sans-serif;
       -webkit-font-smoothing: antialiased;
       overflow: hidden;
@@ -52,18 +57,42 @@
     .tap { transition: transform 120ms cubic-bezier(.2,.8,.2,1), background 160ms ease, border-color 160ms ease, opacity 160ms ease; }
     .tap:active { transform: scale(0.96); }
     .row-tap { transition: background 160ms ease; }
-    .row-tap:active { background: #F2F1EC; }
+    .row-tap:active { background: var(--row-active, #F2F1EC); }
     .card { transition: box-shadow 200ms ease, border-color 200ms ease; }
     /* Scrolling: momentum on iOS, and let the browser skip offscreen work */
     .scroll { -webkit-overflow-scrolling: touch; overscroll-behavior-y: contain; }
     .defer { content-visibility: auto; contain-intrinsic-size: auto 120px; }
     /* Mobile: app fills screen */
     @media (max-width: 600px) {
-      .stage { padding: 0 !important; background: #FAFAF7 !important; }
+      .stage { padding: 0 !important; background: var(--app-bg, #FAFAF7) !important; }
       .device { width: 100% !important; height: 100vh !important; height: 100dvh !important; border-radius: 0 !important; box-shadow: none !important; }
       .island { display: none !important; }
       .home-indicator { display: none !important; }
     }
+    /* Portrait lock. The Screen Orientation API only works for installed or
+       fullscreen apps, so this is the guaranteed fallback: in landscape on a
+       phone-sized viewport the app is covered rather than left to squash. */
+    .rotate-lock { display: none; }
+    @media (orientation: landscape) and (max-height: 560px) {
+      .rotate-lock {
+        position: fixed; inset: 0; z-index: 9999;
+        display: flex; flex-direction: column;
+        align-items: center; justify-content: center; gap: 14px;
+        background: var(--app-bg, #FAFAF7);
+        color: var(--ink, #0E0E0C);
+        text-align: center; padding: 24px;
+        font-family: -apple-system, "SF Pro Display", system-ui, sans-serif;
+      }
+      .stage { visibility: hidden; }
+    }
+    .rotate-lock h1 { margin: 0; font-size: 17px; font-weight: 700; letter-spacing: -0.3px; }
+    .rotate-lock p { margin: 0; font-size: 13px; color: var(--mute, #7A7A72); max-width: 260px; line-height: 1.5; }
+    .rotate-lock svg { animation: rotateHint 2.4s ease-in-out infinite; }
+    @keyframes rotateHint {
+      0%, 45%   { transform: rotate(-90deg); }
+      60%, 100% { transform: rotate(0deg); }
+    }
+
     /* Respect the system setting — no motion for people who ask for none */
     @media (prefers-reduced-motion: reduce) {
       *, *::before, *::after {
@@ -84,29 +113,72 @@
 </head>
 <body>
   <div id="root"></div>
+
+  <div class="rotate-lock" role="alertdialog" aria-live="polite">
+    <svg width="52" height="52" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+         stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+      <rect x="7" y="2" width="10" height="20" rx="2.5" />
+      <path d="M11 18.5h2" />
+    </svg>
+    <h1>Rotate to portrait</h1>
+    <p>Macro is built for a single upright column — turn your device back to keep everything readable.</p>
+  </div>
   <script type="text/babel" data-presets="env,react">
     const { useState, useEffect, useMemo, useRef, Fragment } = React;
 
     // ═══════════════════════════════════════════════════════════════
     // Design tokens
     // ═══════════════════════════════════════════════════════════════
-    const T = {
-      bg: '#FAFAF7',
-      card: '#FFFFFF',
-      ink: '#0E0E0C',
-      ink2: '#3A3A36',
-      mute: '#7A7A72',
-      hair: '#EDECE6',
-      hair2: '#E2E1DB',
-      accent: '#C56B4A',
-      cal: '#C56B4A',
-      protein: '#3D6FB5',
-      carbs: '#C99232',
-      fat: '#3E9979',
-      water: '#5BA3D0',
-      good: '#3E9970',
-      warn: '#C68A2C',
+    // ── Theming ──────────────────────────────────────────────────────
+    // Accents ship as a light/dark pair: a tone that reads well on white is
+    // usually too dark on a dark card, so each colour gets a brighter twin.
+    const ACCENTS = [
+      { key: 'clay', label: 'Clay', light: '#C56B4A', dark: '#E08A66' },
+      { key: 'pink', label: 'Pink', light: '#C4538A', dark: '#EE7FAE' },
+      { key: 'red', label: 'Red', light: '#BE443C', dark: '#E56C61' },
+      { key: 'orange', label: 'Orange', light: '#C1762A', dark: '#E39A48' },
+      { key: 'green', label: 'Green', light: '#3E8F63', dark: '#5FC08C' },
+      { key: 'teal', label: 'Teal', light: '#2F8A8A', dark: '#4FB8B8' },
+      { key: 'blue', label: 'Blue', light: '#3D6FB5', dark: '#6E9DE8' },
+      { key: 'purple', label: 'Purple', light: '#7A57B5', dark: '#A98BE4' },
+    ];
+    const DEFAULT_ACCENT = 'clay';
+
+    const PALETTE = {
+      light: {
+        bg: '#FAFAF7', card: '#FFFFFF',
+        ink: '#0E0E0C', ink2: '#3A3A36', mute: '#7A7A72',
+        hair: '#EDECE6', hair2: '#E2E1DB',
+        onInk: '#FFFFFF', onInkSoft: 'rgba(255,255,255,0.72)', onInkFaint: 'rgba(255,255,255,0.3)',
+        protein: '#3D6FB5', carbs: '#C99232', fat: '#3E9979',
+        water: '#5BA3D0', good: '#3E9970', warn: '#C68A2C',
+        stage: '#E8E6E0', device: '#F2F2F7', rowActive: '#F2F1EC',
+        chrome: 'rgba(255,255,255,0.92)', danger: '#A6423F',
+        fabShadow: '0 8px 20px rgba(0,0,0,0.18), 0 2px 4px rgba(0,0,0,0.08)',
+      },
+      dark: {
+        bg: '#131311', card: '#1D1D1A',
+        ink: '#F6F5F0', ink2: '#CBC9C1', mute: '#8D8B83',
+        hair: '#2A2A26', hair2: '#3A3A35',
+        onInk: '#131311', onInkSoft: 'rgba(19,19,17,0.66)', onInkFaint: 'rgba(19,19,17,0.28)',
+        protein: '#6E9DE8', carbs: '#DFB157', fat: '#57BB92',
+        water: '#6FBCE6', good: '#5FC08C', warn: '#DFA249',
+        stage: '#080807', device: '#131311', rowActive: '#242420',
+        chrome: 'rgba(29,29,26,0.92)', danger: '#E8776E',
+        fabShadow: '0 8px 20px rgba(0,0,0,0.55), 0 2px 4px rgba(0,0,0,0.4)',
+      },
     };
+
+    function makeTheme(mode, accentKey) {
+      const base = PALETTE[mode] || PALETTE.light;
+      const a = ACCENTS.find(x => x.key === accentKey) || ACCENTS[0];
+      const accent = mode === 'dark' ? a.dark : a.light;
+      // The calorie ring shares the accent colour by design
+      return { ...base, accent, cal: accent };
+    }
+
+    // Reassigned by App each render so every screen reads the live theme.
+    let T = makeTheme('light', DEFAULT_ACCENT);
 
     // ═══════════════════════════════════════════════════════════════
     // Icons (stroke-based, minimal)
@@ -205,6 +277,12 @@
           <path d="M7 11h10" />
         </svg>
       ),
+      camera: (s = 18, c = 'currentColor') => (
+        <svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M3 8h3l1.5-2h9L18 8h3v12H3z" />
+          <circle cx="12" cy="13.5" r="3.5" />
+        </svg>
+      ),
       dumbbell: (s = 18, c = 'currentColor') => (
         <svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
           <path d="M3 9v6M6 7v10M18 7v10M21 9v6M6 12h12"/>
@@ -252,7 +330,10 @@
 
     // Body profile. Weight is always stored in lb and height in inches;
     // the unit toggle only changes how they're displayed and entered.
-    const DEFAULT_PROFILE = { name: 'Abel Madera', heightIn: 70, goalWeight: 165, startWeight: 172, units: 'imperial' };
+    const DEFAULT_PROFILE = {
+      name: 'Abel Madera', heightIn: 70, goalWeight: 165, startWeight: 172, units: 'imperial',
+      theme: 'light', accent: DEFAULT_ACCENT, avatar: null,
+    };
 
     // Macro maths. Grams are the source of truth; the split is derived so the
     // two can never disagree. 4 kcal per gram of protein and carbs, 9 for fat.
@@ -280,6 +361,62 @@
       { key: 'lowcarb', label: 'Low carb', split: { p: 35, c: 20, f: 45 }, note: 'Fat replaces most carbohydrate calories.' },
     ];
 
+    // Photos are cropped square and downscaled before they're stored — a
+    // full-size camera image would blow past the localStorage quota.
+    const AVATAR_PX = 256;
+    function fileToAvatar(file) {
+      return new Promise((resolve, reject) => {
+        if (!file || !/^image\//.test(file.type)) return reject(new Error('Not an image'));
+        const reader = new FileReader();
+        reader.onerror = () => reject(new Error("Couldn't read that file"));
+        reader.onload = () => {
+          const img = new Image();
+          img.onerror = () => reject(new Error("Couldn't open that image"));
+          img.onload = () => {
+            try {
+              const side = Math.min(img.width, img.height);
+              const canvas = document.createElement('canvas');
+              canvas.width = AVATAR_PX; canvas.height = AVATAR_PX;
+              const ctx = canvas.getContext('2d');
+              ctx.drawImage(img, (img.width - side) / 2, (img.height - side) / 2, side, side, 0, 0, AVATAR_PX, AVATAR_PX);
+              resolve(canvas.toDataURL('image/jpeg', 0.82));
+            } catch (e) { reject(new Error("Couldn't process that image")); }
+          };
+          img.src = reader.result;
+        };
+        reader.readAsDataURL(file);
+      });
+    }
+
+    function Avatar({ src, initial, size = 38, onClick, badge }) {
+      const inner = src
+        ? <img src={src} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+        : <span style={{ fontSize: size * 0.38, fontWeight: 700, color: src ? T.onInk : T.ink2 }}>{initial}</span>;
+      return (
+        <div
+          onClick={onClick}
+          className={onClick ? 'tap' : undefined}
+          role={onClick ? 'button' : undefined}
+          aria-label={onClick ? 'Change profile photo' : undefined}
+          style={{
+            width: size, height: size, borderRadius: size / 2, background: T.hair,
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            overflow: 'hidden', flexShrink: 0, position: 'relative',
+            cursor: onClick ? 'pointer' : 'default',
+          }}>
+          {inner}
+          {badge && (
+            <div style={{
+              position: 'absolute', right: -1, bottom: -1,
+              width: size * 0.34, height: size * 0.34, borderRadius: size,
+              background: T.accent, border: `2px solid ${T.card}`,
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+            }}>{Ic.camera(size * 0.17, T.onInk)}</div>
+          )}
+        </div>
+      );
+    }
+
     const num = (n) => n.toLocaleString('en-US');
     const pct = (a, b) => Math.min(1, a / b);
     // 0–1 fraction that never goes negative or divides by zero
@@ -303,7 +440,7 @@
       return (
         <div className="device" style={{
           width, height, borderRadius: 48, overflow: 'hidden',
-          position: 'relative', background: '#F2F2F7',
+          position: 'relative', background: T.device,
           boxShadow: '0 40px 80px rgba(0,0,0,0.18), 0 0 0 1px rgba(0,0,0,0.12)',
         }}>
           <div className="island" style={{
@@ -417,7 +554,7 @@
       return (
         <div style={{
           position: 'absolute', bottom: 0, left: 0, right: 0, zIndex: 40,
-          background: 'rgba(255,255,255,0.92)',
+          background: T.chrome,
           backdropFilter: 'blur(20px) saturate(180%)',
           WebkitBackdropFilter: 'blur(20px) saturate(180%)',
           borderTop: `1px solid ${T.hair}`,
@@ -430,9 +567,9 @@
             width: 56, height: 56, borderRadius: 28, background: T.ink,
             border: 'none', cursor: 'pointer', margin: '-20px 4px 0',
             display: 'flex', alignItems: 'center', justifyContent: 'center',
-            boxShadow: '0 8px 20px rgba(0,0,0,0.18), 0 2px 4px rgba(0,0,0,0.08)',
+            boxShadow: T.fabShadow,
           }}>
-            {Ic.plus(26, '#fff')}
+            {Ic.plus(26, T.onInk)}
           </button>
           {item('stats', 'Stats', Ic.chart)}
           {item('profile', 'You', Ic.user)}
@@ -480,11 +617,7 @@
               <div style={{ fontSize: 13, color: T.mute, fontWeight: 500, letterSpacing: 0.3 }}>{dayName} · {monthDay}</div>
               <div style={{ fontSize: 26, fontWeight: 700, color: T.ink, letterSpacing: -0.6, marginTop: 2 }}>{greeting}, {firstName}</div>
             </div>
-            <div style={{
-              width: 38, height: 38, borderRadius: 19, background: T.hair,
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              fontSize: 14, fontWeight: 600, color: T.ink2,
-            }}>{initial}</div>
+            <Avatar src={profile?.avatar} initial={initial} size={38} />
           </div>
 
           <div style={{
@@ -581,7 +714,7 @@
             width: 32, height, borderRadius: 9,
             background: dir === 1 ? T.ink : T.hair, border: 'none',
             display: 'flex', alignItems: 'center', justifyContent: 'center',
-            cursor: 'pointer', color: dir === 1 ? '#fff' : T.ink2, flexShrink: 0,
+            cursor: 'pointer', color: dir === 1 ? T.onInk : T.ink2, flexShrink: 0,
             opacity: (dir === 1 ? water >= MAX_BOTTLES : water <= 0) ? 0.4 : 1,
           }}>{dir === 1 ? Ic.plus(16) : Ic.minus(16)}</button>
       );
@@ -779,7 +912,7 @@
             </div>
 
             <div style={{ display: 'flex', gap: 8 }}>
-              <ActionChip icon={Ic.scan(18, '#fff')} label="Scan barcode" onClick={onScan} dark />
+              <ActionChip icon={Ic.scan(18, T.onInk)} label="Scan barcode" onClick={onScan} dark />
               <ActionChip icon={Ic.plus(18, T.ink)} label="Add item" onClick={() => setCreating(true)} />
             </div>
           </div>
@@ -789,7 +922,7 @@
               {['recents', 'favorites', 'my foods'].map(t => (
                 <button key={t} onClick={() => setTab(t)} style={{
                   padding: '8px 14px', background: tab === t ? T.ink : 'transparent',
-                  color: tab === t ? '#fff' : T.ink2, fontWeight: 600, fontSize: 12,
+                  color: tab === t ? T.onInk : T.ink2, fontWeight: 600, fontSize: 12,
                   border: 'none', borderRadius: 16, cursor: 'pointer', letterSpacing: 0.2,
                   textTransform: 'capitalize',
                 }}>{t}</button>
@@ -846,7 +979,7 @@
         <button onClick={onClick} style={{
           flex: 1, padding: '10px 12px', borderRadius: 12,
           background: dark ? T.ink : T.card, border: `1px solid ${dark ? T.ink : T.hair}`,
-          color: dark ? '#fff' : T.ink, fontSize: 12.5, fontWeight: 600,
+          color: dark ? T.onInk : T.ink, fontSize: 12.5, fontWeight: 600,
           display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, cursor: 'pointer',
         }}>
           {icon}
@@ -1072,7 +1205,7 @@
                 </div>
                 <button onClick={() => setQty(+(qty + 0.25).toFixed(2))} style={{
                   width: 44, height: 44, borderRadius: 22, background: T.ink, border: 'none',
-                  display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: '#fff',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: T.onInk,
                 }}>{Ic.plus(20)}</button>
               </div>
               <div style={{ display: 'flex', gap: 6, marginTop: 12 }}>
@@ -1080,7 +1213,7 @@
                   <button key={q} onClick={() => setQty(q)} style={{
                     flex: 1, padding: '7px 0', borderRadius: 9,
                     background: qty === q ? T.ink : T.bg,
-                    color: qty === q ? '#fff' : T.ink2,
+                    color: qty === q ? T.onInk : T.ink2,
                     border: `1px solid ${qty === q ? T.ink : T.hair2}`,
                     fontSize: 12, fontWeight: 600, cursor: 'pointer', fontVariantNumeric: 'tabular-nums',
                   }}>{q}×</button>
@@ -1098,7 +1231,7 @@
                   <button key={m} onClick={() => setMeal(m)} style={{
                     padding: '10px', borderRadius: 10,
                     background: meal === m ? T.ink : T.bg,
-                    color: meal === m ? '#fff' : T.ink2,
+                    color: meal === m ? T.onInk : T.ink2,
                     border: `1px solid ${meal === m ? T.ink : T.hair2}`,
                     fontSize: 13, fontWeight: 600, cursor: 'pointer',
                   }}>{m}</button>
@@ -1134,11 +1267,11 @@
             <button disabled={!canSave} onClick={save} style={{
               width: '100%', padding: '15px', borderRadius: 16,
               background: canSave ? T.ink : T.hair2, border: 'none',
-              color: canSave ? '#fff' : T.mute, fontWeight: 600, fontSize: 15,
+              color: canSave ? T.onInk : T.mute, fontWeight: 600, fontSize: 15,
               cursor: canSave ? 'pointer' : 'default',
               display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
             }}>
-              {Ic.plus(18, canSave ? '#fff' : T.mute)}
+              {Ic.plus(18, canSave ? T.onInk : T.mute)}
               <span>{canSave ? `Add ${totalCal} kcal to ${meal}` : 'Fill in name and nutrition'}</span>
             </button>
           </div>
@@ -1554,7 +1687,7 @@
                   )}
                   <button onClick={() => onMatch(matched)} style={{
                     flex: 1, padding: '14px', borderRadius: 14, background: T.ink, border: 'none',
-                    fontWeight: 600, fontSize: 14, color: '#fff', cursor: 'pointer',
+                    fontWeight: 600, fontSize: 14, color: T.onInk, cursor: 'pointer',
                   }}>Add to log</button>
                 </div>
               </Fragment>
@@ -1577,7 +1710,7 @@
                   }}>Close</button>
                   <button onClick={scanAgain} style={{
                     flex: 1, padding: '14px', borderRadius: 14, background: T.ink, border: 'none',
-                    fontWeight: 600, fontSize: 14, color: '#fff', cursor: 'pointer',
+                    fontWeight: 600, fontSize: 14, color: T.onInk, cursor: 'pointer',
                   }}>Try again</button>
                 </div>
               </Fragment>
@@ -1690,7 +1823,7 @@
                 </div>
                 <button onClick={() => setQty(+(qty + 0.25).toFixed(2))} style={{
                   width: 44, height: 44, borderRadius: 22, background: T.ink, border: 'none',
-                  display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: '#fff',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: T.onInk,
                 }}>{Ic.plus(20)}</button>
               </div>
               <div style={{ display: 'flex', gap: 6, marginTop: 12 }}>
@@ -1698,7 +1831,7 @@
                   <button key={q} onClick={() => setQty(q)} style={{
                     flex: 1, padding: '7px 0', borderRadius: 9,
                     background: qty === q ? T.ink : T.bg,
-                    color: qty === q ? '#fff' : T.ink2,
+                    color: qty === q ? T.onInk : T.ink2,
                     border: `1px solid ${qty === q ? T.ink : T.hair2}`,
                     fontSize: 12, fontWeight: 600, cursor: 'pointer', fontVariantNumeric: 'tabular-nums',
                   }}>{q}×</button>
@@ -1715,7 +1848,7 @@
                   <button key={m} onClick={() => setMeal(m)} style={{
                     padding: '10px', borderRadius: 10,
                     background: meal === m ? T.ink : T.bg,
-                    color: meal === m ? '#fff' : T.ink2,
+                    color: meal === m ? T.onInk : T.ink2,
                     border: `1px solid ${meal === m ? T.ink : T.hair2}`,
                     fontSize: 13, fontWeight: 600, cursor: 'pointer',
                   }}>{m}</button>
@@ -1756,19 +1889,19 @@
                 <button onClick={onRemove} style={{
                   flex: '0 0 112px', padding: '15px 12px', borderRadius: 16,
                   background: T.bg, border: `1px solid ${T.hair2}`,
-                  color: '#A6423F', fontWeight: 600, fontSize: 14, cursor: 'pointer',
+                  color: T.danger, fontWeight: 600, fontSize: 14, cursor: 'pointer',
                   display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7,
                 }}>
-                  {Ic.trash(17, '#A6423F')}
+                  {Ic.trash(17, T.danger)}
                   <span>Remove</span>
                 </button>
               )}
               <button onClick={() => onLog({ ...food, qty, meal })} style={{
                 flex: 1, padding: '15px', borderRadius: 16, background: T.ink, border: 'none',
-                color: '#fff', fontWeight: 600, fontSize: 15, cursor: 'pointer',
+                color: T.onInk, fontWeight: 600, fontSize: 15, cursor: 'pointer',
                 display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
               }}>
-                {isLoggedItem ? Ic.check(18, '#fff') : Ic.plus(18, '#fff')}
+                {isLoggedItem ? Ic.check(18, T.onInk) : Ic.plus(18, T.onInk)}
                 <span>{isLoggedItem ? `Update ${cal} kcal` : `Add ${cal} kcal to ${meal}`}</span>
               </button>
             </div>
@@ -1839,7 +1972,7 @@
               {selectedDate !== todayKey && (
                 <button onClick={() => setSelectedDate(todayKey)} style={{
                   height: 32, padding: '0 12px', borderRadius: 16,
-                  background: T.ink, border: 'none', color: '#fff',
+                  background: T.ink, border: 'none', color: T.onInk,
                   fontSize: 12, fontWeight: 600, cursor: 'pointer',
                   fontFamily: 'inherit',
                 }}>Today</button>
@@ -1875,20 +2008,20 @@
                   flex: 1, padding: '6px 4px', background: active ? T.ink : 'none', border: 'none',
                   borderRadius: 12, cursor: isFuture ? 'not-allowed' : 'pointer',
                   display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4,
-                  color: active ? '#fff' : T.ink, opacity: isFuture ? 0.35 : 1,
+                  color: active ? T.onInk : T.ink, opacity: isFuture ? 0.35 : 1,
                 }}>
                   <div style={{ fontSize: 10, fontWeight: 600, opacity: active ? 0.7 : 0.5 }}>{dayLetters[i]}</div>
                   <div style={{ fontSize: 16, fontWeight: 700, fontVariantNumeric: 'tabular-nums' }}>{d.getDate()}</div>
                   {cal === 0 ? (
-                    <div style={{ width: 4, height: 4, borderRadius: 2, background: active ? 'rgba(255,255,255,0.4)' : T.hair2 }} />
+                    <div style={{ width: 4, height: 4, borderRadius: 2, background: active ? T.onInkSoft : T.hair2 }} />
                   ) : (
                     <div style={{
                       width: 22, height: 3, borderRadius: 2,
-                      background: active ? 'rgba(255,255,255,0.3)' : T.hair, position: 'relative', overflow: 'hidden',
+                      background: active ? T.onInkFaint : T.hair, position: 'relative', overflow: 'hidden',
                     }}>
                       <div style={{
                         width: `${ratio * 100}%`, height: '100%',
-                        background: active ? '#fff' : T.cal,
+                        background: active ? T.onInk : T.cal,
                       }} />
                     </div>
                   )}
@@ -1954,7 +2087,7 @@
             ].map(t => (
               <button key={t.k} className="tap" onClick={() => setSub(t.k)} style={{
                 flex: 1, padding: '8px', background: sub === t.k ? T.ink : 'transparent',
-                color: sub === t.k ? '#fff' : T.ink2, border: 'none', borderRadius: 9,
+                color: sub === t.k ? T.onInk : T.ink2, border: 'none', borderRadius: 9,
                 cursor: 'pointer', fontFamily: 'inherit',
                 display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1,
                 transition: 'background 200ms ease, color 200ms ease',
@@ -1962,7 +2095,7 @@
                 <span style={{ fontSize: 13, fontWeight: 600 }}>{t.label}</span>
                 <span style={{
                   fontSize: 10.5, fontWeight: 500, fontVariantNumeric: 'tabular-nums',
-                  color: sub === t.k ? 'rgba(255,255,255,0.7)' : T.mute,
+                  color: sub === t.k ? T.onInkSoft : T.mute,
                 }}>{t.sub}</span>
               </button>
             ))}
@@ -2044,10 +2177,10 @@
               height: 28, padding: '0 12px', borderRadius: 14,
               background: addingWorkout ? T.ink : T.card,
               border: `1px solid ${addingWorkout ? T.ink : T.hair2}`,
-              color: addingWorkout ? '#fff' : T.ink, fontSize: 12, fontWeight: 600,
+              color: addingWorkout ? T.onInk : T.ink, fontSize: 12, fontWeight: 600,
               cursor: 'pointer', fontFamily: 'inherit', display: 'flex', alignItems: 'center', gap: 4,
             }}>
-              {addingWorkout ? Ic.close(14, '#fff') : Ic.plus(14)}
+              {addingWorkout ? Ic.close(14, T.onInk) : Ic.plus(14)}
               <span>{addingWorkout ? 'Cancel' : 'Workout'}</span>
             </button>
           </div>
@@ -2129,7 +2262,7 @@
             {PRESETS.map(p => (
               <button key={p.name} onClick={() => applyPreset(p)} style={{
                 padding: '6px 12px', borderRadius: 14, background: name === p.name ? T.ink : T.bg,
-                color: name === p.name ? '#fff' : T.ink2,
+                color: name === p.name ? T.onInk : T.ink2,
                 border: `1px solid ${name === p.name ? T.ink : T.hair2}`,
                 fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit',
               }}>{p.name}</button>
@@ -2151,7 +2284,7 @@
               style={{
                 flex: 1, padding: '12px', borderRadius: 12,
                 background: canSave ? T.ink : T.hair2, border: 'none',
-                color: canSave ? '#fff' : T.mute, fontSize: 14, fontWeight: 600,
+                color: canSave ? T.onInk : T.mute, fontSize: 14, fontWeight: 600,
                 cursor: canSave ? 'pointer' : 'default', fontFamily: 'inherit',
               }}>
               {canSave ? `Add ${num(Math.round(calNum))} kcal burned` : 'Name and calories needed'}
@@ -2235,7 +2368,7 @@
             {['week', 'month'].map(r => (
               <button key={r} onClick={() => setRange(r)} style={{
                 flex: 1, padding: '8px', background: range === r ? T.ink : 'transparent',
-                color: range === r ? '#fff' : T.ink2, fontWeight: 600, fontSize: 13,
+                color: range === r ? T.onInk : T.ink2, fontWeight: 600, fontSize: 13,
                 border: 'none', borderRadius: 9, cursor: 'pointer', textTransform: 'capitalize',
               }}>{r === 'week' ? 'This week' : 'Last 28 days'}</button>
             ))}
@@ -2592,7 +2725,7 @@
             <div style={{ padding: '12px 20px 32px', borderTop: `1px solid ${T.hair}`, background: T.card }}>
               <button className="tap" disabled={!canSave} onClick={onSave} style={{
                 width: '100%', padding: '15px', borderRadius: 16, border: 'none',
-                background: canSave ? T.ink : T.hair2, color: canSave ? '#fff' : T.mute,
+                background: canSave ? T.ink : T.hair2, color: canSave ? T.onInk : T.mute,
                 fontWeight: 600, fontSize: 15, fontFamily: 'inherit',
                 cursor: canSave ? 'pointer' : 'default',
               }}>{saveLabel}</button>
@@ -2641,7 +2774,7 @@
             </div>
             <button className="tap" onClick={() => bump(step)} aria-label="Increase" style={{
               width: 48, height: 48, borderRadius: 24, background: T.ink, border: 'none',
-              display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: '#fff',
+              display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: T.onInk,
               flexShrink: 0,
             }}>{Ic.plus(22)}</button>
           </div>
@@ -2748,7 +2881,7 @@
                     if (sv > 0) { onSetStart(fromDisplayWeight(sv, units)); setEditingStart(false); }
                   }} style={{
                     padding: '11px 18px', borderRadius: 10, border: 'none', height: 42,
-                    background: startDraft ? T.ink : T.hair2, color: startDraft ? '#fff' : T.mute,
+                    background: startDraft ? T.ink : T.hair2, color: startDraft ? T.onInk : T.mute,
                     fontSize: 14, fontWeight: 600, fontFamily: 'inherit',
                     cursor: startDraft ? 'pointer' : 'default',
                   }}>Set</button>
@@ -2809,7 +2942,7 @@
     // inside the tab's scroll view: the tab wrapper animates a transform, which
     // would make it the containing block and collapse an absolutely positioned
     // child to zero height.
-    function SettingsDetail({ screen, back, profile, setProfile, goals, setGoals, weights = [], onAddWeight, onRemoveWeight }) {
+    function SettingsDetail({ screen, back, mode, profile, setProfile, goals, setGoals, weights = [], onAddWeight, onRemoveWeight }) {
       const units = profile.units;
       const u = weightUnit(units);
       const sorted = [...weights].sort((a, b) => a.date.localeCompare(b.date));
@@ -2861,6 +2994,15 @@
           ) : null}
         />);
       }
+      if (screen === 'accent') {
+        return (<AccentSetting profile={profile} mode={mode} onBack={back}
+          onPick={(key) => setProfile({ ...profile, accent: key })} />);
+      }
+      if (screen === 'photo') {
+        return (<PhotoSetting profile={profile} onBack={back}
+          onSet={(data) => setProfile({ ...profile, avatar: data })}
+          onRemove={() => setProfile({ ...profile, avatar: null })} />);
+      }
       if (screen === 'split') {
         return (<MacroSplitSetting goals={goals} onBack={back}
           onSave={(g) => { setGoals({ ...goals, ...g }); back(); }} />);
@@ -2904,6 +3046,128 @@
       }
 
       return null;
+    }
+
+    // Accent picker. Swatches preview the exact tone used in the current mode,
+    // so what you tap is what you get in light or dark.
+    function AccentSetting({ profile, onBack, onPick, mode }) {
+      const current = profile.accent || DEFAULT_ACCENT;
+      return (
+        <SettingScreen
+          title="Accent colour"
+          subtitle={`Used for the calorie ring, highlights and charts. Each colour has a ${mode === 'dark' ? 'brighter' : 'deeper'} version tuned for ${mode} mode.`}
+          onBack={onBack}
+        >
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 14 }}>
+            {ACCENTS.map(a => {
+              const swatch = mode === 'dark' ? a.dark : a.light;
+              const on = a.key === current;
+              return (
+                <button key={a.key} className="tap" onClick={() => onPick(a.key)} style={{
+                  display: 'flex', alignItems: 'center', gap: 11, padding: '13px 14px',
+                  background: T.card, borderRadius: 16, cursor: 'pointer', fontFamily: 'inherit',
+                  border: `1.5px solid ${on ? swatch : T.hair}`, textAlign: 'left',
+                }}>
+                  <div style={{
+                    width: 26, height: 26, borderRadius: 13, background: swatch, flexShrink: 0,
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  }}>
+                    {on && Ic.check(15, mode === 'dark' ? '#131311' : '#fff')}
+                  </div>
+                  <span style={{ fontSize: 14, fontWeight: on ? 600 : 500, color: T.ink }}>{a.label}</span>
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Live preview so the choice is judged in context, not in isolation */}
+          <div className="card" style={{
+            background: T.card, borderRadius: 20, padding: '18px', border: `1px solid ${T.hair}`,
+            display: 'flex', alignItems: 'center', gap: 16,
+          }}>
+            <div style={{ position: 'relative', width: 74, height: 74, flexShrink: 0 }}>
+              <svg width="74" height="74" viewBox="0 0 74 74">
+                <circle cx="37" cy="37" r="31" fill="none" stroke={T.hair} strokeWidth="8" />
+                <circle cx="37" cy="37" r="31" fill="none" stroke={T.accent} strokeWidth="8"
+                  strokeDasharray={`${2 * Math.PI * 31 * 0.62} ${2 * Math.PI * 31}`}
+                  strokeLinecap="round" transform="rotate(-90 37 37)" />
+              </svg>
+            </div>
+            <div style={{ minWidth: 0 }}>
+              <div style={{ fontSize: 10.5, color: T.mute, fontWeight: 600, letterSpacing: 0.6 }}>PREVIEW</div>
+              <div style={{ fontSize: 20, fontWeight: 700, color: T.ink, letterSpacing: -0.4, marginTop: 2 }}>
+                1,364 <span style={{ fontSize: 12, color: T.mute, fontWeight: 500 }}>kcal left</span>
+              </div>
+              <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
+                <span style={{
+                  padding: '4px 10px', borderRadius: 12, background: T.ink, color: T.onInk,
+                  fontSize: 11, fontWeight: 600,
+                }}>Button</span>
+                <span style={{
+                  padding: '4px 10px', borderRadius: 12, background: T.accent, color: T.onInk,
+                  fontSize: 11, fontWeight: 600,
+                }}>Accent</span>
+              </div>
+            </div>
+          </div>
+        </SettingScreen>
+      );
+    }
+
+    // Profile photo. A plain file input gets the native Take Photo / Photo
+    // Library sheet on mobile, so there's no camera plumbing to maintain.
+    function PhotoSetting({ profile, onBack, onSet, onRemove }) {
+      const inputRef = useRef(null);
+      const [busy, setBusy] = useState(false);
+      const [err, setErr] = useState(null);
+      const initial = (profile.name || 'A').trim()[0].toUpperCase();
+
+      const pick = (e) => {
+        const file = e.target.files && e.target.files[0];
+        e.target.value = ''; // let the same file be chosen twice
+        if (!file) return;
+        setErr(null); setBusy(true);
+        fileToAvatar(file)
+          .then(data => { onSet(data); setBusy(false); })
+          .catch(ex => { setErr(ex.message || "Couldn't use that image"); setBusy(false); });
+      };
+
+      return (
+        <SettingScreen
+          title="Profile photo"
+          subtitle="Take a new photo or choose one from your library. It's cropped square, shrunk to 256px and kept on this device only."
+          onBack={onBack}
+        >
+          <input
+            ref={inputRef} type="file" accept="image/*" onChange={pick}
+            style={{ display: 'none' }} aria-hidden="true" tabIndex={-1}
+          />
+
+          <div className="card" style={{
+            background: T.card, borderRadius: 20, padding: '24px 18px', border: `1px solid ${T.hair}`,
+            display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 16, marginBottom: 12,
+          }}>
+            <Avatar src={profile.avatar} initial={initial} size={116} />
+            {busy && <div style={{ fontSize: 12, color: T.mute }}>Processing…</div>}
+            {err && <div style={{ fontSize: 12, color: T.warn, textAlign: 'center', lineHeight: 1.5 }}>{err}</div>}
+            <button className="tap" onClick={() => inputRef.current && inputRef.current.click()} style={{
+              width: '100%', padding: '14px', borderRadius: 14, background: T.ink, border: 'none',
+              color: T.onInk, fontSize: 14.5, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit',
+              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+            }}>
+              {Ic.camera(18, T.onInk)}
+              <span>{profile.avatar ? 'Change photo' : 'Take or choose photo'}</span>
+            </button>
+            {profile.avatar && (
+              <button className="tap" onClick={onRemove} style={{
+                width: '100%', padding: '13px', borderRadius: 14, background: T.bg,
+                border: `1px solid ${T.hair2}`, color: T.warn, fontSize: 14, fontWeight: 600,
+                cursor: 'pointer', fontFamily: 'inherit',
+              }}>Remove photo</button>
+            )}
+          </div>
+        </SettingScreen>
+      );
     }
 
     // Macro split editor. You set percentages; grams are derived from the
@@ -2963,7 +3227,7 @@
                   <button className="tap" onClick={() => bump(r.key, 5)} aria-label={`Increase ${r.label}`} style={{
                     width: 36, height: 36, borderRadius: 18, background: T.ink, border: 'none',
                     display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer',
-                    color: '#fff', flexShrink: 0,
+                    color: T.onInk, flexShrink: 0,
                   }}>{Ic.plus(18)}</button>
                 </div>
               ))}
@@ -2993,10 +3257,10 @@
                   border: `1px solid ${on ? T.ink : T.hair}`,
                   cursor: 'pointer', fontFamily: 'inherit',
                 }}>
-                  <div style={{ fontSize: 13.5, fontWeight: 600, color: on ? '#fff' : T.ink }}>{pr.label}</div>
+                  <div style={{ fontSize: 13.5, fontWeight: 600, color: on ? T.onInk : T.ink }}>{pr.label}</div>
                   <div style={{
                     fontSize: 11, marginTop: 2, fontVariantNumeric: 'tabular-nums',
-                    color: on ? 'rgba(255,255,255,0.7)' : T.mute,
+                    color: on ? T.onInkSoft : T.mute,
                   }}>{pr.split.p}/{pr.split.c}/{pr.split.f}</div>
                 </button>
               );
@@ -3047,11 +3311,8 @@
             background: T.card, borderRadius: 20, padding: '18px', border: `1px solid ${T.hair}`, marginBottom: 14,
             display: 'flex', alignItems: 'center', gap: 14,
           }}>
-            <div style={{
-              width: 56, height: 56, borderRadius: 28, background: T.ink,
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              fontSize: 22, fontWeight: 700, color: '#fff', flexShrink: 0,
-            }}>{initial}</div>
+            <Avatar src={profile.avatar} initial={initial} size={56} badge
+              onClick={() => setScreen('photo')} />
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ fontSize: 17, fontWeight: 700, color: T.ink, letterSpacing: -0.3 }}>{profile.name}</div>
               <div style={{ fontSize: 12, color: T.mute, marginTop: 2 }}>{subtitle}</div>
@@ -3109,13 +3370,34 @@
             <NavRow label="Goal weight" value={goalLb ? `${toDisplayWeight(goalLb, units)} ${u}` : 'Not set'} onClick={() => setScreen('goalWeight')} />
           </Section>
 
+          <Section title="Appearance">
+            <Row label="Theme" first>
+              <div style={{ display: 'flex', gap: 2, background: T.bg, borderRadius: 8, padding: 2 }}>
+                {['light', 'dark', 'auto'].map(x => (
+                  <button key={x} className="tap" onClick={() => setProfile({ ...profile, theme: x })} style={{
+                    padding: '6px 10px', background: (profile.theme || 'light') === x ? T.ink : 'transparent',
+                    color: (profile.theme || 'light') === x ? T.onInk : T.ink2, fontSize: 11, fontWeight: 600,
+                    border: 'none', borderRadius: 6, cursor: 'pointer', textTransform: 'capitalize',
+                    fontFamily: 'inherit',
+                  }}>{x}</button>
+                ))}
+              </div>
+            </Row>
+            <NavRow
+              label="Accent colour"
+              value={(ACCENTS.find(a => a.key === profile.accent) || ACCENTS[0]).label}
+              onClick={() => setScreen('accent')}
+            />
+            <NavRow label="Profile photo" value={profile.avatar ? 'Added' : 'None'} onClick={() => setScreen('photo')} />
+          </Section>
+
           <Section title="Preferences">
             <Row label="Units">
               <div style={{ display: 'flex', gap: 2, background: T.bg, borderRadius: 8, padding: 2 }}>
                 {['imperial', 'metric'].map(x => (
                   <button key={x} className="tap" onClick={() => setProfile({ ...profile, units: x })} style={{
                     padding: '6px 11px', background: units === x ? T.ink : 'transparent',
-                    color: units === x ? '#fff' : T.ink2, fontSize: 11, fontWeight: 600,
+                    color: units === x ? T.onInk : T.ink2, fontSize: 11, fontWeight: 600,
                     border: 'none', borderRadius: 6, cursor: 'pointer', textTransform: 'capitalize',
                     fontFamily: 'inherit',
                   }}>{x}</button>
@@ -3179,11 +3461,11 @@
       );
     }
 
-    function Row({ label, value, children, labelColor, valueColor, onClick }) {
+    function Row({ label, value, children, labelColor, valueColor, onClick, first }) {
       return (
         <div onClick={onClick} className={onClick ? 'row-tap' : undefined} style={{
           padding: '13px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-          borderTop: `1px solid ${T.hair}`,
+          borderTop: first ? 'none' : `1px solid ${T.hair}`,
           cursor: onClick ? 'pointer' : 'default',
         }}>
           <span style={{ fontSize: 14, color: labelColor || T.ink, fontWeight: 500 }}>{label}</span>
@@ -3298,7 +3580,7 @@
                       <button key={x} className="tap" onClick={() => setUnits(x)} style={{
                         flex: 1, padding: '11px', borderRadius: 10,
                         background: units === x ? T.ink : T.bg,
-                        color: units === x ? '#fff' : T.ink2,
+                        color: units === x ? T.onInk : T.ink2,
                         border: `1px solid ${units === x ? T.ink : T.hair2}`,
                         fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit',
                         textTransform: 'capitalize',
@@ -3375,7 +3657,7 @@
               onClick={() => (last ? finish() : setStep(step + 1))}
               style={{
                 flex: 1, padding: '15px', borderRadius: 16, border: 'none',
-                background: cur.valid ? T.ink : T.hair2, color: cur.valid ? '#fff' : T.mute,
+                background: cur.valid ? T.ink : T.hair2, color: cur.valid ? T.onInk : T.mute,
                 fontWeight: 600, fontSize: 15, fontFamily: 'inherit',
                 cursor: cur.valid ? 'pointer' : 'default',
               }}>
@@ -3394,13 +3676,13 @@
       return (
         <div style={{
           position: 'absolute', bottom: 100, left: '50%', transform: 'translateX(-50%)',
-          background: T.ink, color: '#fff', padding: '10px 18px', borderRadius: 999,
+          background: T.ink, color: T.onInk, padding: '10px 18px', borderRadius: 999,
           fontSize: 13, fontWeight: 500, zIndex: 200,
           display: 'flex', alignItems: 'center', gap: 6,
           animation: 'toastIn 200ms ease-out',
-          boxShadow: '0 8px 24px rgba(0,0,0,0.25)',
+          boxShadow: T.fabShadow,
         }}>
-          {Ic.check(16, '#fff')}
+          {Ic.check(16, T.onInk)}
           <span>{msg}</span>
         </div>
       );
@@ -3534,6 +3816,49 @@
 
       // Publish the current targets so every screen reads the user's numbers.
       GOAL = goals;
+
+      // Theme: 'auto' follows the OS setting and updates live if it flips.
+      const [systemDark, setSystemDark] = useState(() =>
+        typeof window !== 'undefined' && window.matchMedia
+          ? window.matchMedia('(prefers-color-scheme: dark)').matches : false);
+      useEffect(() => {
+        if (typeof window === 'undefined' || !window.matchMedia) return;
+        const mq = window.matchMedia('(prefers-color-scheme: dark)');
+        const onChange = (e) => setSystemDark(e.matches);
+        if (mq.addEventListener) mq.addEventListener('change', onChange);
+        else if (mq.addListener) mq.addListener(onChange);
+        return () => {
+          if (mq.removeEventListener) mq.removeEventListener('change', onChange);
+          else if (mq.removeListener) mq.removeListener(onChange);
+        };
+      }, []);
+      const mode = profile.theme === 'auto' ? (systemDark ? 'dark' : 'light') : (profile.theme || 'light');
+      T = makeTheme(mode, profile.accent);
+
+      // The page chrome lives in CSS, so mirror the theme into custom properties.
+      useEffect(() => {
+        const theme = makeTheme(mode, profile.accent);
+        const root = document.documentElement;
+        root.style.setProperty('--stage-bg', theme.stage);
+        root.style.setProperty('--app-bg', theme.bg);
+        root.style.setProperty('--row-active', theme.rowActive);
+        root.style.setProperty('--ink', theme.ink);
+        root.style.setProperty('--mute', theme.mute);
+        root.style.colorScheme = mode;
+        // Tints the browser/status bar on mobile so it doesn't clash
+        const meta = document.querySelector('meta[name="theme-color"]');
+        if (meta) meta.setAttribute('content', theme.bg);
+      }, [mode, profile.accent]);
+
+      // Ask the browser to pin portrait. Only granted for installed or
+      // fullscreen apps, so failure is expected and the CSS guard covers it.
+      useEffect(() => {
+        const so = typeof screen !== 'undefined' && screen.orientation;
+        if (!so || typeof so.lock !== 'function') return;
+        Promise.resolve()
+          .then(() => so.lock('portrait'))
+          .catch(() => {});
+      }, []);
 
       const [customFoods, setCustomFoods] = useState(saved?.customFoods || []);
       const [favorites, setFavorites] = useState(new Set(saved?.favorites || DEFAULT_FAVORITE_IDS));
@@ -3724,7 +4049,7 @@
 
       return (
         <div className="stage" style={{
-          minHeight: '100vh', background: '#E8E6E0',
+          minHeight: '100vh', background: T.stage,
           display: 'flex', alignItems: 'center', justifyContent: 'center',
           padding: 24,
         }}>
@@ -3743,6 +4068,7 @@
                   <SettingsDetail
                     screen={settingScreen}
                     back={() => setSettingScreen(null)}
+                    mode={mode}
                     profile={profile} setProfile={setProfile}
                     goals={goals} setGoals={setGoals}
                     weights={weights}
