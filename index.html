@@ -16,7 +16,7 @@
   <title>Macro — Calorie Counter</title>
   <style>
     *, *::before, *::after { box-sizing: border-box; }
-    html, body { margin: 0; padding: 0; height: 100%; touch-action: manipulation; overscroll-behavior: none; }
+    html, body { margin: 0; padding: 0; height: 100%; touch-action: manipulation; }
     body {
       background: var(--stage-bg, #E8E6E0);
       font-family: -apple-system, "SF Pro Display", system-ui, sans-serif;
@@ -65,14 +65,7 @@
     /* Mobile: app fills screen */
     @media (max-width: 600px) {
       .stage { padding: 0 !important; background: var(--app-bg, #FAFAF7) !important; }
-      .device {
-        width: 100% !important;
-        height: 100vh !important;
-        height: 100dvh !important;
-        /* --vvh tracks the visual viewport, so the app fits above the keyboard */
-        height: var(--vvh, 100dvh) !important;
-        border-radius: 0 !important; box-shadow: none !important;
-      }
+      .device { width: 100% !important; height: 100vh !important; height: 100dvh !important; border-radius: 0 !important; box-shadow: none !important; }
       .island { display: none !important; }
       .home-indicator { display: none !important; }
     }
@@ -285,17 +278,9 @@
         </svg>
       ),
       camera: (s = 18, c = 'currentColor') => (
-        <svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-          <path d="M3 8.5h3.2l1.4-2.3h8.8l1.4 2.3H21v11H3z" />
-          <circle cx="12" cy="13.7" r="3.3" />
-        </svg>
-      ),
-      // Filled version: strokes turn to mush at badge size, so the lens is
-      // punched out in the badge's own colour instead.
-      cameraFill: (s = 14, c = 'currentColor', bg = '#fff') => (
-        <svg width={s} height={s} viewBox="0 0 24 24" fill="none">
-          <path d="M9.1 3.4h5.8l1.35 2.3H20A2.6 2.6 0 0122.6 8.3v9.9a2.6 2.6 0 01-2.6 2.6H4a2.6 2.6 0 01-2.6-2.6V8.3A2.6 2.6 0 014 5.7h3.75l1.35-2.3z" fill={c} />
-          <circle cx="12" cy="13.2" r="3.7" fill={bg} />
+        <svg width={s} height={s} viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M3 8h3l1.5-2h9L18 8h3v12H3z" />
+          <circle cx="12" cy="13.5" r="3.5" />
         </svg>
       ),
       dumbbell: (s = 18, c = 'currentColor') => (
@@ -404,20 +389,9 @@
     }
 
     function Avatar({ src, initial, size = 38, onClick, badge }) {
-      // The photo is clipped by an inner circle. The badge has to live OUTSIDE
-      // that clip, or the rounded overflow eats most of it.
-      const badgeSize = Math.max(18, Math.round(size * 0.36));
-      const circle = (
-        <div style={{
-          width: size, height: size, borderRadius: size / 2, background: T.hair,
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          overflow: 'hidden',
-        }}>
-          {src
-            ? <img src={src} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
-            : <span style={{ fontSize: Math.round(size * 0.38), fontWeight: 700, color: T.ink2 }}>{initial}</span>}
-        </div>
-      );
+      const inner = src
+        ? <img src={src} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+        : <span style={{ fontSize: size * 0.38, fontWeight: 700, color: src ? T.onInk : T.ink2 }}>{initial}</span>;
       return (
         <div
           onClick={onClick}
@@ -425,20 +399,19 @@
           role={onClick ? 'button' : undefined}
           aria-label={onClick ? 'Change profile photo' : undefined}
           style={{
-            position: 'relative', width: size, height: size, flexShrink: 0,
+            width: size, height: size, borderRadius: size / 2, background: T.hair,
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            overflow: 'hidden', flexShrink: 0, position: 'relative',
             cursor: onClick ? 'pointer' : 'default',
           }}>
-          {circle}
+          {inner}
           {badge && (
             <div style={{
-              position: 'absolute', right: -2, bottom: -2,
-              width: badgeSize, height: badgeSize, borderRadius: badgeSize / 2,
+              position: 'absolute', right: -1, bottom: -1,
+              width: size * 0.34, height: size * 0.34, borderRadius: size,
               background: T.accent, border: `2px solid ${T.card}`,
               display: 'flex', alignItems: 'center', justifyContent: 'center',
-              boxSizing: 'content-box',
-            }}>
-              {Ic.cameraFill(Math.round(badgeSize * 0.62), T.onInk, T.accent)}
-            </div>
+            }}>{Ic.camera(size * 0.17, T.onInk)}</div>
           )}
         </div>
       );
@@ -3877,55 +3850,6 @@
         if (meta) meta.setAttribute('content', theme.bg);
       }, [mode, profile.accent]);
 
-      // Keyboard handling. iOS shrinks the *visual* viewport when the keyboard
-      // opens but leaves the layout viewport full height, so the browser scrolls
-      // the document to reveal the focused field — which is what was dragging
-      // the whole screen away. Pin the app to the visible area and keep the
-      // document itself at scroll 0 so nothing can be scrolled out of reach.
-      useEffect(() => {
-        const vv = window.visualViewport;
-        const root = document.documentElement;
-        let frame = null;
-        // Scoped to window with a timeout fallback so this can't throw in
-        // environments where the bare globals aren't present.
-        const raf = (fn) => (window.requestAnimationFrame ? window.requestAnimationFrame(fn) : setTimeout(fn, 16));
-        const caf = (id) => {
-          if (id == null) return;
-          if (window.cancelAnimationFrame) window.cancelAnimationFrame(id);
-          else clearTimeout(id);
-        };
-        const sync = () => {
-          const h = vv ? vv.height : window.innerHeight;
-          root.style.setProperty('--vvh', h + 'px');
-          if (window.scrollY !== 0 || window.pageYOffset !== 0) window.scrollTo(0, 0);
-        };
-        const onEvent = () => {
-          caf(frame);
-          frame = raf(sync);
-        };
-        sync();
-        if (vv) {
-          vv.addEventListener('resize', onEvent);
-          vv.addEventListener('scroll', onEvent);
-        }
-        window.addEventListener('resize', onEvent);
-        window.addEventListener('orientationchange', onEvent);
-        // Focus fires before the keyboard finishes animating; re-sync after.
-        window.addEventListener('focusin', onEvent);
-        window.addEventListener('focusout', onEvent);
-        return () => {
-          caf(frame);
-          if (vv) {
-            vv.removeEventListener('resize', onEvent);
-            vv.removeEventListener('scroll', onEvent);
-          }
-          window.removeEventListener('resize', onEvent);
-          window.removeEventListener('orientationchange', onEvent);
-          window.removeEventListener('focusin', onEvent);
-          window.removeEventListener('focusout', onEvent);
-        };
-      }, []);
-
       // Ask the browser to pin portrait. Only granted for installed or
       // fullscreen apps, so failure is expected and the CSS guard covers it.
       useEffect(() => {
@@ -4125,7 +4049,7 @@
 
       return (
         <div className="stage" style={{
-          minHeight: 'var(--vvh, 100vh)', background: T.stage,
+          minHeight: '100vh', background: T.stage,
           display: 'flex', alignItems: 'center', justifyContent: 'center',
           padding: 24,
         }}>
