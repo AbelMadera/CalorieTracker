@@ -64,26 +64,13 @@
     .defer { content-visibility: auto; contain-intrinsic-size: auto 120px; }
     /* Mobile: app fills screen */
     @media (max-width: 600px) {
-      .stage {
-        padding: 0 !important;
-        background: var(--app-bg, #FAFAF7) !important;
-        /* Stretch, don't centre: a device shorter than the stage would other-
-           wise sit in the middle with dead bands above and below it. */
-        align-items: stretch !important;
-        justify-content: flex-start !important;
-        min-height: 100dvh !important;
-        height: var(--vvh, 100dvh) !important;
-        min-height: var(--vvh, 100dvh) !important;
-        overflow: hidden !important;
-      }
+      .stage { padding: 0 !important; background: var(--app-bg, #FAFAF7) !important; }
       .device {
         width: 100% !important;
         height: 100vh !important;
         height: 100dvh !important;
-        /* --vvh is only set while the keyboard is open; otherwise this falls
-           back to 100dvh so the app always fills the screen exactly. */
+        /* --vvh tracks the visual viewport, so the app fits above the keyboard */
         height: var(--vvh, 100dvh) !important;
-        max-height: var(--vvh, 100dvh) !important;
         border-radius: 0 !important; box-shadow: none !important;
       }
       .island { display: none !important; }
@@ -651,7 +638,7 @@
       const initial = (firstName[0] || 'A').toUpperCase();
 
       return (
-        <div className="screen" style={{ padding: '8px 20px calc(108px + env(safe-area-inset-bottom, 0px))' }}>
+        <div className="screen" style={{ padding: '8px 20px 120px' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 18 }}>
             <div>
               <div style={{ fontSize: 13, color: T.mute, fontWeight: 500, letterSpacing: 0.3 }}>{dayName} · {monthDay}</div>
@@ -2002,7 +1989,7 @@
       const canGoNext = nextWeekStart <= new Date();
 
       return (
-        <div className="screen" style={{ padding: '8px 20px calc(108px + env(safe-area-inset-bottom, 0px))' }}>
+        <div className="screen" style={{ padding: '8px 20px 120px' }}>
           <div style={{ marginBottom: 14, display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end' }}>
             <div>
               <div style={{ fontSize: 11, color: T.mute, fontWeight: 600, letterSpacing: 0.6 }}>{rangeLabel}</div>
@@ -2395,7 +2382,7 @@
       const macroSum = macroKcal(eaten);
 
       return (
-        <div className="screen" style={{ padding: '8px 20px calc(108px + env(safe-area-inset-bottom, 0px))' }}>
+        <div className="screen" style={{ padding: '8px 20px 120px' }}>
           <div style={{ marginBottom: 14 }}>
             <div style={{ fontSize: 11, color: T.mute, fontWeight: 600, letterSpacing: 0.6 }}>YOUR PROGRESS</div>
             <div style={{ fontSize: 26, fontWeight: 700, color: T.ink, letterSpacing: -0.6, marginTop: 2 }}>Stats</div>
@@ -3341,7 +3328,7 @@
       const split = macroSplit(goals);
 
       return (
-        <div className="screen" style={{ padding: '8px 20px calc(108px + env(safe-area-inset-bottom, 0px))' }}>
+        <div className="screen" style={{ padding: '8px 20px 120px' }}>
           <div style={{ marginBottom: 18 }}>
             <div style={{ fontSize: 11, color: T.mute, fontWeight: 600, letterSpacing: 0.6 }}>PROFILE</div>
             <div style={{ fontSize: 26, fontWeight: 700, color: T.ink, letterSpacing: -0.6, marginTop: 2 }}>You</div>
@@ -3908,14 +3895,8 @@
           else clearTimeout(id);
         };
         const sync = () => {
-          const visible = vv ? vv.height : window.innerHeight;
-          const full = window.innerHeight || visible;
-          // Only treat a large shortfall as a keyboard. Browser toolbars shave
-          // a few points off the visual viewport all the time, and clamping to
-          // that left a dead strip under the tab bar.
-          const keyboardOpen = full - visible > 140;
-          if (keyboardOpen) root.style.setProperty('--vvh', Math.round(visible) + 'px');
-          else root.style.removeProperty('--vvh');
+          const h = vv ? vv.height : window.innerHeight;
+          root.style.setProperty('--vvh', h + 'px');
           if (window.scrollY !== 0 || window.pageYOffset !== 0) window.scrollTo(0, 0);
         };
         const onEvent = () => {
@@ -4144,7 +4125,7 @@
 
       return (
         <div className="stage" style={{
-          minHeight: 'var(--vvh, 100dvh)', background: T.stage,
+          minHeight: 'var(--vvh, 100vh)', background: T.stage,
           display: 'flex', alignItems: 'center', justifyContent: 'center',
           padding: 24,
         }}>
